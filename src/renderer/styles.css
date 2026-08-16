@@ -280,6 +280,21 @@ label.field > span {
   gap: 6px;
 }
 
+/* Cache indicator on a candidate row: filled means the geometry is already local. */
+.dot {
+  width: 6px;
+  height: 6px;
+  margin-top: 4px;
+  border-radius: 50%;
+  border: 1px solid var(--border-strong);
+  justify-self: center;
+}
+
+.dot.cached {
+  background: var(--ok);
+  border-color: var(--ok);
+}
+
 .tier {
   font-size: 9px;
   font-weight: 700;
@@ -349,10 +364,71 @@ label.field > span {
 .map-shell {
   position: relative;
   height: 100%;
+  width: 100%;
   background: #070a0e;
+}
+
+.map-shell .map {
+  position: absolute;
+  inset: 0;
+}
+
+.map-overlay {
+  position: absolute;
+  inset: 0;
   display: flex;
   align-items: center;
   justify-content: center;
+  padding: 20px;
+  text-align: center;
+  color: var(--text-faint);
+  font-size: 11px;
+  background: rgba(7, 10, 14, 0.72);
+  pointer-events: none;
+}
+
+.map-overlay.error {
+  color: var(--err);
+  align-items: flex-start;
+  padding-top: 24px;
+  font-family: ui-monospace, 'Cascadia Mono', Consolas, monospace;
+  line-height: 1.6;
+  pointer-events: auto;
+  user-select: text;
+  overflow: auto;
+}
+
+.map-badge {
+  position: absolute;
+  left: 8px;
+  bottom: 8px;
+  padding: 3px 7px;
+  border-radius: 3px;
+  font-size: 10px;
+  letter-spacing: 0.02em;
+  background: var(--bg-raised);
+  border: 1px solid var(--border-strong);
+  color: var(--text-dim);
+}
+
+.map-badge.warn {
+  color: var(--warn);
+  border-color: var(--warn);
+}
+
+/* maplibre's own chrome, toned down to match the app. */
+.maplibregl-ctrl-group {
+  background: var(--bg-raised);
+  border: 1px solid var(--border-strong);
+  box-shadow: none;
+}
+
+.maplibregl-ctrl-group button + button {
+  border-top: 1px solid var(--border);
+}
+
+.maplibregl-ctrl-group button .maplibregl-ctrl-icon {
+  filter: invert(0.85);
 }
 
 .readout {

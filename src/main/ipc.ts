@@ -2,9 +2,11 @@ import { ipcMain, type BrowserWindow } from 'electron';
 import { CH, type SearchRequest, type SearchResponse } from '@shared/ipc';
 import type { AppSettings, SourceRow } from '@shared/types';
 import { getDb } from '@db/index';
-import { getCachedGeometry, listSources, setSourceStatus } from '@db/queries';
+import { listSources, setSourceStatus } from '@db/queries';
+import { quickFind } from '@resolve/quick-find';
 import { clearKey, hasKey, setKey } from './keychain';
 import { cancelHarvest, startHarvest } from './harvester-host';
+import { getGeometry } from './geometry-service';
 
 /**
  * Every channel in shared/ipc.ts is registered here exactly once. Handlers stay thin:
@@ -46,17 +48,39 @@ export function registerIpc(win: BrowserWindow, ctx: { dbPath: string; dataDir: 
     cancelHarvest();
   });
 
-  ipcMain.handle(CH.searchRun, (_e, req: SearchRequest): Promise<SearchResponse> => {
-    // M3 wires the local matcher here; M4 adds the Claude parse and rank passes.
-    void req;
-    throw new Error('search is not implemented until M3');
+  ipcMain.handle(CH.searchRun, (_e, req: SearchRequest): SearchResponse => {
+    if (!req || typeof req.prompt !== 'string') throw new Error('search:run expects a prompt string');
+
+    // M2 uses the provisional FTS lookup so a boundary can be selected and previewed.
+    // M3 replaces this with the real matcher, M4 adds the Claude parse and rank passes.
+    const started = Date.now();
+    const candidates = quickFind(getDb(), req.prompt, {
+      featureType: req.featureTypeFilter ?? null,
+      jurisdiction: req.jurisdictionFilter ?? null,
+      limit: req.limit ?? 15,
+    });
+    const matchMs = Date.now() - started;
+
+    return {
+      candidates,
+      parsed: {
+        placeNames: [req.prompt],
+        featureTypeHint: req.featureTypeFilter ?? null,
+        jurisdictionHint: req.jurisdictionFilter ?? null,
+        vintageHint: null,
+        wants: 'outline',
+        notes: 'provisional literal lookup; the parser arrives in M4',
+        via: 'keyword',
+      },
+      timings: { parseMs: 0, matchMs, rankMs: 0 },
+    };
   });
 
-  ipcMain.handle(CH.geometryGet, (_e, featureId: unknown) => {
+  // Lazy fetch on a cache miss, then cached permanently. The renderer shows a loading
+  // state for the duration -- a first fetch of a big boundary is a real wait.
+  ipcMain.handle(CH.geometryGet, async (_e, featureId: unknown) => {
     if (typeof featureId !== 'number') throw new Error('geometry:get expects a numeric feature id');
-    const row = getCachedGeometry(getDb(), featureId);
-    if (!row) return null; // M2 turns a cache miss into a lazy fetch.
-    return { geometry: JSON.parse(row.geometry_json) as unknown, vertexCount: row.vertex_count ?? 0 };
+    return getGeometry(featureId);
   });
 
   ipcMain.handle(CH.exportRun, () => {

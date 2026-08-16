@@ -5,6 +5,8 @@ import { recordHarvestResult, setSourceStatus } from '@db/queries';
 import type { SourceRow } from '@shared/types';
 import { HttpClient } from '../harvester/http';
 import { runSource, UnsupportedSourceError } from '../harvester/run-source';
+import { quickFind } from '@resolve/quick-find';
+import { getGeometry } from './geometry-service';
 
 /**
  * Headless harvest runner.
@@ -29,10 +31,12 @@ interface Args {
   names: string[];
   list: boolean;
   limit: number | null;
+  /** Look a place up and fetch its geometry, exercising the whole M2 path. */
+  find: string | null;
 }
 
 function parseArgs(argv: string[]): Args {
-  const out: Args = { ids: [], types: [], names: [], list: false, limit: null };
+  const out: Args = { ids: [], types: [], names: [], list: false, limit: null, find: null };
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
     const next = argv[i + 1];
@@ -47,6 +51,9 @@ function parseArgs(argv: string[]): Args {
       i++;
     } else if (a === '--limit' && next) {
       out.limit = Number(next);
+      i++;
+    } else if (a === '--find' && next) {
+      out.find = next;
       i++;
     } else if (a === '--list') {
       out.list = true;
@@ -67,6 +74,49 @@ function selectSources(db: ReturnType<typeof openDb>, args: Args): SourceRow[] {
   return args.limit ? chosen.slice(0, args.limit) : chosen;
 }
 
+/**
+ * Exercises the whole M2 path from a terminal: name lookup, lazy geometry fetch, cache
+ * write, then a second read that must come from the cache.
+ */
+async function runFind(db: ReturnType<typeof openDb>, text: string, limit: number): Promise<number> {
+  const candidates = quickFind(db, text, { limit });
+  if (candidates.length === 0) {
+    console.log(`[cli] no candidates for "${text}"`);
+    return 1;
+  }
+
+  console.log(`\n[cli] ${candidates.length} candidate(s) for "${text}":`);
+  for (const c of candidates) {
+    console.log(
+      `  ${c.matchScore.toFixed(2)}  ${c.officialName}  [${c.featureType}/${c.jurisdiction ?? '—'}]` +
+        `  cached=${c.hasCachedGeometry}\n         via "${c.matchedAlias}"  <- ${c.sourceName}`,
+    );
+  }
+
+  const top = candidates[0]!;
+  console.log(`\n[cli] fetching geometry for "${top.officialName}" (feature ${top.featureId})`);
+
+  const first = await getGeometry(top.featureId);
+  console.log(
+    `  ${first.fromCache ? 'CACHE' : 'NETWORK'}  ${first.vertexCount.toLocaleString()} vertices, ` +
+      `${first.partCount} part(s), ${first.fetchMs}ms`,
+  );
+  console.log(`  bbox: ${first.bbox ? first.bbox.map((n) => n.toFixed(4)).join(', ') : '(none)'}`);
+  console.log(`  attribution: ${first.attribution ?? '(none)'}`);
+  console.log(`  geometry type: ${(first.geometry as { type?: string }).type ?? '?'}`);
+
+  const second = await getGeometry(top.featureId);
+  console.log(
+    `  second read: ${second.fromCache ? 'CACHE' : 'NETWORK'} in ${second.fetchMs}ms ` +
+      `(${second.vertexCount.toLocaleString()} vertices)`,
+  );
+  if (!second.fromCache) {
+    console.error('  FAILED: the second read should have come from the cache');
+    return 1;
+  }
+  return 0;
+}
+
 async function main(): Promise<number> {
   const args = parseArgs(process.argv.slice(2));
   const dbPath = join(app.getPath('userData'), 'data', 'catalog.sqlite');
@@ -80,6 +130,10 @@ async function main(): Promise<number> {
       );
     }
     return 0;
+  }
+
+  if (args.find) {
+    return runFind(db, args.find, args.limit ?? 5);
   }
 
   const sources = selectSources(db, args);

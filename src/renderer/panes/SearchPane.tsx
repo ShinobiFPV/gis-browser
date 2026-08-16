@@ -1,15 +1,18 @@
-import { useState, type RefObject } from 'react';
+import { useEffect, useState, type RefObject } from 'react';
 import type { Candidate } from '@shared/types';
 import { FEATURE_TYPES, FEATURE_TYPE_LABELS, JURISDICTIONS, type FeatureType } from '@shared/taxonomy';
 
 interface Props {
   promptRef: RefObject<HTMLTextAreaElement | null>;
+  selected: Candidate | null;
   onSelect: (c: Candidate | null) => void;
   hasKey: boolean;
+  /** Dev harness only; see App.tsx. Runs this query on mount and picks the top hit. */
+  demoQuery?: string | null;
 }
 
-export function SearchPane({ promptRef, onSelect, hasKey }: Props): React.JSX.Element {
-  const [prompt, setPrompt] = useState('');
+export function SearchPane({ promptRef, selected, onSelect, hasKey, demoQuery }: Props): React.JSX.Element {
+  const [prompt, setPrompt] = useState(demoQuery ?? '');
   const [useLlm, setUseLlm] = useState(false);
   const [typeFilter, setTypeFilter] = useState('');
   const [jurFilter, setJurFilter] = useState('');
@@ -17,18 +20,29 @@ export function SearchPane({ promptRef, onSelect, hasKey }: Props): React.JSX.El
   const [error, setError] = useState<string | null>(null);
   const [running, setRunning] = useState(false);
 
-  async function run(): Promise<void> {
-    if (!prompt.trim()) return;
+  // Dev harness: run the demo query once on mount and select its top hit.
+  useEffect(() => {
+    if (!demoQuery) return;
+    void run(demoQuery, true);
+    // Intentionally mount-only.
+
+  }, []);
+
+  async function run(text = prompt, autoSelectTop = false): Promise<void> {
+    if (!text.trim()) return;
     setRunning(true);
     setError(null);
     try {
       const res = await window.gis.searchRun({
-        prompt,
+        prompt: text,
         useLlm,
         featureTypeFilter: typeFilter || null,
         jurisdictionFilter: jurFilter || null,
       });
       setCandidates(res.candidates);
+      // Never auto-select, even on a single high-confidence hit. A wrong boundary on air
+      // costs far more than a click. (The dev harness is the one exception.)
+      onSelect(autoSelectTop ? (res.candidates[0] ?? null) : null);
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
       setCandidates([]);
@@ -93,16 +107,22 @@ export function SearchPane({ promptRef, onSelect, hasKey }: Props): React.JSX.El
         {error && <div className="empty">{error}</div>}
         {!error && candidates.length === 0 && (
           <div className="empty">
-            Type a plain-language request and press <kbd>Ctrl</kbd>+<kbd>Enter</kbd>.
+            Type a place name and press <kbd>Ctrl</kbd>+<kbd>Enter</kbd>.
             <br />
             <br />
-            Matching arrives in M3. The top five candidates will always be shown here with map
-            thumbnails — nothing is ever auto-exported, however confident the match.
+            This is a literal name lookup for now — fuzzy matching and ranking arrive in M3, the
+            Claude parser in M4. Candidates are always listed for you to choose from; nothing is
+            ever auto-exported, however confident the match.
           </div>
         )}
         {candidates.map((c) => (
-          <div key={c.featureId} className="src" onClick={() => onSelect(c)}>
-            <span />
+          <div
+            key={c.featureId}
+            className={`src${selected?.featureId === c.featureId ? ' sel' : ''}`}
+            onClick={() => onSelect(c)}
+            title={`${c.officialName} — ${c.sourceName}${c.vintage ? ` (${c.vintage})` : ''}`}
+          >
+            <span className={c.hasCachedGeometry ? 'dot cached' : 'dot'} title={c.hasCachedGeometry ? 'geometry cached' : 'geometry not fetched yet'} />
             <div className="name">{c.officialName}</div>
             <span className="status">{c.matchScore.toFixed(2)}</span>
             <div className="meta">

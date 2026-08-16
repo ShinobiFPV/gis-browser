@@ -1,8 +1,10 @@
 import { useState } from 'react';
 import type { Candidate } from '@shared/types';
+import type { GeometryResult } from '@shared/ipc';
 
 interface Props {
   candidate: Candidate | null;
+  geometry: GeometryResult | null;
 }
 
 /** Projections offered for SVG export. GeoJSON is always EPSG:4326 per RFC 7946. */
@@ -12,7 +14,7 @@ const PROJECTIONS = [
   { code: 'EPSG:3857', label: 'Web Mercator' },
 ];
 
-export function ExportPane({ candidate }: Props): React.JSX.Element {
+export function ExportPane({ candidate, geometry }: Props): React.JSX.Element {
   const [format, setFormat] = useState<'geojson' | 'svg'>('geojson');
   const [projection, setProjection] = useState(PROJECTIONS[0]!.code);
   const [retention, setRetention] = useState(5);
@@ -69,10 +71,15 @@ export function ExportPane({ candidate }: Props): React.JSX.Element {
 
         <div className="readout" style={{ marginTop: 4 }}>
           <span>
-            before <b>—</b>
+            before <b>{geometry ? geometry.vertexCount.toLocaleString() : '—'}</b>
           </span>
+          {/* A linear estimate, deliberately labelled as one. The real figure comes from
+              mapshaper in M5, and topology-preserving simplification will not hit it exactly. */}
           <span>
-            after <b>—</b>
+            after (est.){' '}
+            <b>
+              {geometry ? Math.max(4, Math.round((geometry.vertexCount * retention) / 100)).toLocaleString() : '—'}
+            </b>
           </span>
         </div>
 
@@ -89,7 +96,7 @@ export function ExportPane({ candidate }: Props): React.JSX.Element {
           <input
             type="text"
             readOnly
-            value={candidate?.attribution ?? ''}
+            value={geometry?.attribution ?? candidate?.attribution ?? ''}
             placeholder="attribution appears once a candidate is selected"
           />
         </label>

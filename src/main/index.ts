@@ -1,5 +1,5 @@
 import { join } from 'node:path';
-import { app, BrowserWindow, shell } from 'electron';
+import { app, BrowserWindow, screen, shell } from 'electron';
 import { closeDb, openDb } from '@db/index';
 import { registerIpc } from './ipc';
 import { killHarvest } from './harvester-host';
@@ -23,9 +23,15 @@ function paths() {
 }
 
 function createWindow(dbPath: string, dataDir: string): BrowserWindow {
+  // Four dense panes want width, but a window bigger than the work area opens partly
+  // off-screen -- on a 1600x900 laptop the Export pane simply is not reachable.
+  const work = screen.getPrimaryDisplay().workAreaSize;
+  const width = Math.min(1600, Math.max(1100, work.width - 40));
+  const height = Math.min(1000, Math.max(700, work.height - 40));
+
   const w = new BrowserWindow({
-    width: 1600,
-    height: 1000,
+    width,
+    height,
     minWidth: 1100,
     minHeight: 700,
     show: false,

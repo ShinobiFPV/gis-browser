@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { AppSettings, Candidate, HarvestProgress, SourceRow } from '@shared/types';
-import type { LogLine } from '@shared/ipc';
+import type { GeometryResult, LogLine } from '@shared/ipc';
 import { SourcesPane } from './panes/SourcesPane';
 import { SearchPane } from './panes/SearchPane';
 import { PreviewPane } from './panes/PreviewPane';
@@ -12,6 +12,7 @@ export function App(): React.JSX.Element {
   const [progress, setProgress] = useState<Record<number, HarvestProgress>>({});
   const [lastLog, setLastLog] = useState<LogLine | null>(null);
   const [selected, setSelected] = useState<Candidate | null>(null);
+  const [geometry, setGeometry] = useState<GeometryResult | null>(null);
 
   const promptRef = useRef<HTMLTextAreaElement>(null);
 
@@ -50,6 +51,14 @@ export function App(): React.JSX.Element {
     return () => window.removeEventListener('keydown', onKey);
   }, []);
 
+  /**
+   * Dev harness. `?demo=<query>` runs a search and selects the top hit on start, so the
+   * whole search -> fetch -> render path can be driven without a human clicking. Query
+   * strings only reach the renderer via ELECTRON_RENDERER_URL in development; a packaged
+   * build uses loadFile and can never trigger this.
+   */
+  const demoQuery = new URLSearchParams(location.search).get('demo');
+
   const harvesting = Object.values(progress).some((p) => p.phase !== 'done' && p.phase !== 'failed');
 
   return (
@@ -74,9 +83,15 @@ export function App(): React.JSX.Element {
 
       <div className="panes">
         <SourcesPane sources={sources} progress={progress} onRefresh={refreshSources} busy={harvesting} />
-        <SearchPane promptRef={promptRef} onSelect={setSelected} hasKey={settings?.hasAnthropicKey ?? false} />
-        <PreviewPane candidate={selected} />
-        <ExportPane candidate={selected} />
+        <SearchPane
+          promptRef={promptRef}
+          selected={selected}
+          onSelect={setSelected}
+          hasKey={settings?.hasAnthropicKey ?? false}
+          demoQuery={demoQuery}
+        />
+        <PreviewPane candidate={selected} onGeometry={setGeometry} />
+        <ExportPane candidate={selected} geometry={geometry} />
       </div>
 
       <footer className="statusbar">

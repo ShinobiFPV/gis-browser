@@ -48,6 +48,25 @@ export interface SearchResponse {
   timings: { parseMs: number; matchMs: number; rankMs: number };
 }
 
+/** What `geometry:get` hands back. Geometry is EPSG:4326 GeoJSON. */
+export interface GeometryResult {
+  geometry: unknown;
+  vertexCount: number;
+  bbox: [number, number, number, number] | null;
+  /** False means this request went to the network and warmed the cache. */
+  fromCache: boolean;
+  fetchMs: number;
+  /** Parts the service returned before merging; >1 means a multipart boundary. */
+  partCount: number;
+  attribution: string | null;
+  /**
+   * Degrees of generalisation the SOURCE applied, when full resolution could not be
+   * served. null means full resolution. Distinct from the export simplification slider --
+   * this is a provenance fact about what we were able to retrieve.
+   */
+  generalisationDeg: number | null;
+}
+
 export interface LogLine {
   level: 'debug' | 'info' | 'warn' | 'error';
   scope: string;
@@ -65,7 +84,7 @@ export interface GisBridge {
   harvestStart(sourceIds: number[]): Promise<{ ok: boolean; error?: string }>;
   harvestCancel(): Promise<void>;
   searchRun(req: SearchRequest): Promise<SearchResponse>;
-  geometryGet(featureId: number): Promise<{ geometry: unknown; vertexCount: number } | null>;
+  geometryGet(featureId: number): Promise<GeometryResult>;
   onHarvestProgress(cb: (p: HarvestProgress) => void): () => void;
   onLog(cb: (l: LogLine) => void): () => void;
 }

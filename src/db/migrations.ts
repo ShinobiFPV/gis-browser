@@ -164,6 +164,17 @@ CREATE TRIGGER features_ad AFTER DELETE ON features BEGIN
 END;
 `;
 
+/**
+ * Some boundaries are too big to serve at full resolution: StatCan answers a
+ * single-feature query for Nunavut with HTTP 500 after ~20 seconds, and only succeeds
+ * once the geometry is generalised. When that happens we keep the coarser shape rather
+ * than nothing -- but a boundary that went to air generalised is a provenance fact, so
+ * record the offset used. NULL means full resolution.
+ */
+const M5_GENERALISATION = `
+ALTER TABLE geometries ADD COLUMN generalisation_deg REAL;
+`;
+
 export const MIGRATIONS: Migration[] = [
   {
     version: 1,
@@ -184,6 +195,11 @@ export const MIGRATIONS: Migration[] = [
     version: 4,
     name: 'cascade feature deletion into the R-tree',
     up: (db) => db.exec(M4_RTREE_CLEANUP),
+  },
+  {
+    version: 5,
+    name: 'record source-side generalisation on cached geometry',
+    up: (db) => db.exec(M5_GENERALISATION),
   },
 ];
 
