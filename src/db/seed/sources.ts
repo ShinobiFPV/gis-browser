@@ -80,9 +80,10 @@ const FEDERAL_ELECTORAL: SeedSource[] = [
     sourceSrid: 3978,
     verifiedCount: 352,
     verifiedAt: VERIFIED_AT,
+    identityField: 'FED_NUM',
     notes:
       '352 rows but only 343 distinct FED_NUM -- this layer is multipart, one row per polygon. ' +
-      'Ingest must group by FED_NUM into a MultiPolygon or the count check will misfire.',
+      'identityField merges the parts; the count check reconciles raw rows, not merged features.',
   }),
   esri({
     name: 'Federal Electoral Districts — 2021 (2013 Representation Order)',
@@ -156,7 +157,8 @@ const FEDERAL_ELECTORAL: SeedSource[] = [
     sourceSrid: 3978,
     verifiedCount: 312,
     verifiedAt: VERIFIED_AT,
-    notes: '308 seats; 312 rows suggests some multipart splits. Verify at ingest.',
+    identityField: 'fednum',
+    notes: '308 seats; 312 rows are multipart splits, merged on fednum at ingest.',
   }),
 ];
 
@@ -425,7 +427,7 @@ const BRITISH_COLUMBIA: SeedSource[] = [
   bcwfs('pub:WHSE_LEGAL_ADMIN_BOUNDARIES.ABMS_MUNICIPALITIES_SP', 'BC Municipalities', 'municipality', ['ADMIN_AREA_NAME', 'ADMIN_AREA_ABBREVIATION']),
   bcwfs('pub:WHSE_LEGAL_ADMIN_BOUNDARIES.ABMS_REGIONAL_DISTRICTS_SP', 'BC Regional Districts', 'regional_district', ['ADMIN_AREA_NAME', 'ADMIN_AREA_ABBREVIATION']),
   bcwfs('pub:WHSE_ADMIN_BOUNDARIES.ADM_INDIAN_RESERVES_BANDS_SP', 'BC Indian Reserves and Band Names', 'indian_reserve', ['ENGLISH_NAME', 'BAND_NAME']),
-  bcwfs('pub:WHSE_TANTALIS.TA_LAND_CLAIM_STLMNT_AREAS_SVW', 'BC Land Claim Settlement Areas', 'land_claim_settlement', ['SETTLEMENT_AREA_NAME']),
+  bcwfs('pub:WHSE_TANTALIS.TA_LAND_CLAIM_STLMNT_AREAS_SVW', 'BC Land Claim Settlement Areas', 'land_claim_settlement', ['LAND_CLAIM_SETTLEMENT_NAME']),
   bcwfs('pub:WHSE_TANTALIS.TA_SCHOOL_DISTRICTS_SVW', 'BC School Districts', 'school_board', ['SCHOOL_DISTRICT_NAME']),
   bcwfs('pub:WHSE_TANTALIS.TA_PARK_ECORES_PA_SVW', 'BC Parks, Ecological Reserves and Protected Areas', 'provincial_park', ['PROTECTED_LANDS_NAME']),
 ];
@@ -436,6 +438,28 @@ const BRITISH_COLUMBIA: SeedSource[] = [
 // ---------------------------------------------------------------------------
 
 const BULK: SeedSource[] = [
+  bulk({
+    name: 'Federal Electoral Districts — 2023 Representation Order (shapefile)',
+    endpoint:
+      'https://ftp.maps.canada.ca/pub/elections_elections/Electoral-districts_Circonscription-electorale/' +
+      'federal_electoral_districts_boundaries_2023/FED_CA_2023_EN-SHP.zip',
+    layerId: null,
+    featureType: 'federal_electoral_district',
+    jurisdiction: 'CA',
+    vintage: '2023 representation order',
+    licence: OGL_CANADA,
+    attribution: 'Elections Canada',
+    nameFields: ['ED_NAMEE', 'ED_NAMEF', 'FED_NUM'],
+    sourceSrid: 3978,
+    verifiedCount: 343,
+    verifiedAt: VERIFIED_AT,
+    notes:
+      '9 MB. Deliberate redundancy for the layer that matters most on election night: the ESRI ' +
+      'REST endpoint for these boundaries lives on maps-cartes.services.geo.ca, which was ' +
+      'returning 403 host-wide on 2026-08-16. This file is the same Elections Canada data on ' +
+      'ftp.maps.canada.ca, a different host that stayed up. Every other vintage (2003, 2013, ' +
+      '2015, 2019, 2021) is mirrored in the parent directory if the same outage recurs.',
+  }),
   bulk({
     name: 'Aboriginal Lands of Canada — national shapefile',
     endpoint: 'https://ftp.maps.canada.ca/pub/nrcan_rncan/vector/geobase_al_ta/shp_eng/AL_TA_CA_SHP_eng.zip',

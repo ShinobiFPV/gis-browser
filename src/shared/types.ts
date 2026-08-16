@@ -41,6 +41,12 @@ export interface SourceRow {
   verified_at: string | null;
   notes: string | null;
 
+  /**
+   * Attribute identifying the real-world feature on multipart layers. When set, ingest
+   * keys on it instead of the native object id and merges the parts.
+   */
+  identity_field: string | null;
+
   /** Computed by listSources(): rows actually indexed so far. */
   indexed_count?: number;
 }
@@ -64,6 +70,8 @@ export interface SeedSource {
   verifiedCount: number | null;
   /** ISO date the endpoint was last confirmed live. */
   verifiedAt: string | null;
+  /** Set on multipart layers so ingest merges polygons belonging to one feature. */
+  identityField?: string;
   notes?: string;
 }
 

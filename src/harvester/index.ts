@@ -1,19 +1,19 @@
 import { openDb } from '@db/index';
-import { getSource, setSourceStatus } from '@db/queries';
+import { getSource, recordHarvestResult, setSourceStatus } from '@db/queries';
 import type { HarvestProgress } from '@shared/types';
 import type { FromHarvester, ToHarvester } from '../main/harvester-host';
+import { HttpClient } from './http';
+import { runSource } from './run-source';
 
 /**
  * Harvester utilityProcess entry point.
  *
- * Runs outside main and outside the renderer. Opens its own connection to the same
- * SQLite file (WAL mode makes concurrent reads from the UI safe) and streams progress
- * back over the message port.
- *
- * M0 wires the process, the message protocol and the checkpoint bookkeeping.
- * M1 plugs the ESRI REST and WFS catalog clients into runSource().
+ * Runs outside main and outside the renderer, with its own SQLite connection (WAL makes
+ * the UI's concurrent reads safe) and its own HTTP client enforcing the 3-per-host
+ * concurrency cap and retry policy. Progress streams back over the message port.
  */
 
+let http: HttpClient | null = null;
 let cancelled = false;
 
 function send(msg: FromHarvester): void {
@@ -32,7 +32,8 @@ process.parentPort.on('message', (e) => {
   const msg = e.data as ToHarvester;
   if (msg.type === 'cancel') {
     cancelled = true;
-    log('warn', 'cancellation requested');
+    http?.cancel();
+    log('warn', 'cancellation requested; finishing the current page then stopping');
     return;
   }
   if (msg.type === 'start') {
@@ -45,6 +46,8 @@ process.parentPort.on('message', (e) => {
 
 async function run(dbPath: string, sourceIds: number[]): Promise<void> {
   const db = openDb(dbPath);
+  http = new HttpClient({ log: (level, message) => log(level, message) });
+
   log('info', `harvest starting for ${sourceIds.length} source(s)`);
 
   for (const id of sourceIds) {
@@ -61,14 +64,59 @@ async function run(dbPath: string, sourceIds: number[]): Promise<void> {
       sourceName: source.name,
       phase: 'starting',
       fetched: 0,
-      expected: source.verified_count ?? null,
+      expected: source.verified_count,
       message: `${source.kind} tier ${source.tier}`,
     });
-
     setSourceStatus(db, id, 'harvesting');
 
+    const started = Date.now();
     try {
-      await runSource();
+      const result = await runSource(
+        db,
+        http,
+        source,
+        {
+          onPhase: (phase, fetched, expected, message) =>
+            progress({ sourceId: id, sourceName: source.name, phase, fetched, expected, message }),
+          log,
+        },
+        { resume: true },
+      );
+
+      if (cancelled) {
+        setSourceStatus(db, id, 'stale');
+        progress({
+          sourceId: id,
+          sourceName: source.name,
+          phase: 'failed',
+          fetched: result.rowsFetched,
+          expected: result.serviceCount,
+          message: 'cancelled',
+          error: 'cancelled by user; progress checkpointed for resume',
+        });
+        break;
+      }
+
+      const { stats } = result;
+      const features = stats.featuresWritten;
+      recordHarvestResult(db, id, { featureCount: features, status: 'ok' });
+
+      const merged = stats.featuresMerged > 0 ? `, ${stats.featuresMerged} multipart rows merged` : '';
+      const rejected = stats.bboxRejected > 0 ? `, ${stats.bboxRejected} bbox rejected` : '';
+      log(
+        'info',
+        `${source.name}: ${features} features, ${stats.aliasesWritten} aliases${merged}${rejected} ` +
+          `in ${((Date.now() - started) / 1000).toFixed(1)}s`,
+      );
+
+      progress({
+        sourceId: id,
+        sourceName: source.name,
+        phase: 'done',
+        fetched: result.rowsFetched,
+        expected: result.serviceCount,
+        message: `${features} features, ${stats.aliasesWritten} aliases`,
+      });
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       setSourceStatus(db, id, 'failed');
@@ -77,35 +125,14 @@ async function run(dbPath: string, sourceIds: number[]): Promise<void> {
         sourceName: source.name,
         phase: 'failed',
         fetched: 0,
-        expected: source.verified_count ?? null,
+        expected: source.verified_count,
         message: 'harvest failed',
         error: message,
       });
       log('error', `${source.name}: ${message}`);
-      continue;
     }
-
-    progress({
-      sourceId: id,
-      sourceName: source.name,
-      phase: 'done',
-      fetched: 0,
-      expected: source.verified_count ?? null,
-      message: 'not implemented until M1',
-    });
-    setSourceStatus(db, id, 'seeded');
   }
 
   send({ type: 'finished' });
   log('info', 'harvest finished');
-}
-
-/**
- * M1 replaces this with a dispatch on source.kind into the catalog clients:
- * esri-rest and wfs index attributes only (returnGeometry=false / propertyName), page
- * to exhaustion, then reconcile the row count against the service's own count and throw
- * on mismatch rather than accepting a truncated harvest.
- */
-async function runSource(): Promise<void> {
-  throw new Error('catalog clients are not implemented until M1');
 }

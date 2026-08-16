@@ -21,6 +21,8 @@ export default defineConfig({
         input: {
           index: resolve('src/main/index.ts'),
           harvester: resolve('src/harvester/index.ts'),
+          // Headless harvest runner: `electron out/main/cli.js --list`
+          cli: resolve('src/main/cli.ts'),
         },
       },
     },

@@ -127,11 +127,63 @@ CREATE TABLE bulk_downloads (
 );
 `;
 
+/**
+ * Multipart layers publish one row per polygon. Elections Canada's 2025 layer returns 352
+ * rows for 343 ridings. `identity_field` names the attribute that identifies the real
+ * feature, so ingest merges the parts instead of writing nine phantom ridings.
+ */
+const M2_IDENTITY_FIELD = `
+ALTER TABLE sources ADD COLUMN identity_field TEXT;
+`;
+
+/**
+ * `UNIQUE(endpoint, layer_id, feature_type)` never fired for Tier B sources, because
+ * SQLite treats NULLs as distinct inside a UNIQUE index -- so every bulk-file source with
+ * a NULL layer_id was re-inserted on each startup. Collapse NULL to the empty string so
+ * the constraint does its job, after removing the duplicates it already let through.
+ */
+const M3_BULK_SOURCE_UNIQUENESS = `
+DELETE FROM sources WHERE id NOT IN (
+  SELECT MIN(id) FROM sources GROUP BY endpoint, COALESCE(layer_id, ''), feature_type
+);
+UPDATE sources SET layer_id = '' WHERE layer_id IS NULL;
+`;
+
+/**
+ * `features_rtree` is a virtual table, so it cannot carry a foreign key and was never
+ * cleaned up when a feature was deleted -- neither by the ON DELETE CASCADE from sources
+ * nor by a direct delete. Orphaned entries make a bbox search return ids that no longer
+ * exist. Mirror what the alias triggers already do for the FTS index, and sweep the
+ * orphans that accumulated before the trigger existed.
+ */
+const M4_RTREE_CLEANUP = `
+DELETE FROM features_rtree WHERE id NOT IN (SELECT id FROM features);
+
+CREATE TRIGGER features_ad AFTER DELETE ON features BEGIN
+  DELETE FROM features_rtree WHERE id = old.id;
+END;
+`;
+
 export const MIGRATIONS: Migration[] = [
   {
     version: 1,
     name: 'initial schema',
     up: (db) => db.exec(M1_INITIAL),
+  },
+  {
+    version: 2,
+    name: 'sources.identity_field for multipart layers',
+    up: (db) => db.exec(M2_IDENTITY_FIELD),
+  },
+  {
+    version: 3,
+    name: 'stop re-seeding Tier B sources with NULL layer_id',
+    up: (db) => db.exec(M3_BULK_SOURCE_UNIQUENESS),
+  },
+  {
+    version: 4,
+    name: 'cascade feature deletion into the R-tree',
+    up: (db) => db.exec(M4_RTREE_CLEANUP),
   },
 ];
 

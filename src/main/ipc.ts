@@ -46,7 +46,7 @@ export function registerIpc(win: BrowserWindow, ctx: { dbPath: string; dataDir: 
     cancelHarvest();
   });
 
-  ipcMain.handle(CH.searchRun, async (_e, req: SearchRequest): Promise<SearchResponse> => {
+  ipcMain.handle(CH.searchRun, (_e, req: SearchRequest): Promise<SearchResponse> => {
     // M3 wires the local matcher here; M4 adds the Claude parse and rank passes.
     void req;
     throw new Error('search is not implemented until M3');
@@ -56,7 +56,7 @@ export function registerIpc(win: BrowserWindow, ctx: { dbPath: string; dataDir: 
     if (typeof featureId !== 'number') throw new Error('geometry:get expects a numeric feature id');
     const row = getCachedGeometry(getDb(), featureId);
     if (!row) return null; // M2 turns a cache miss into a lazy fetch.
-    return { geometry: JSON.parse(row.geometry_json), vertexCount: row.vertex_count ?? 0 };
+    return { geometry: JSON.parse(row.geometry_json) as unknown, vertexCount: row.vertex_count ?? 0 };
   });
 
   ipcMain.handle(CH.exportRun, () => {

@@ -11,6 +11,12 @@ import { killHarvest } from './harvester-host';
 
 const isDev = !app.isPackaged;
 
+// Pin the app name so userData is the same directory however the app is launched.
+// Without this, `electron .` resolves the name from package.json but
+// `electron out/main/cli.js` falls back to "Electron", and the headless harvester would
+// quietly fill a different database from the one the UI reads.
+app.setName('gis-browser');
+
 function paths() {
   const dataDir = join(app.getPath('userData'), 'data');
   return { dataDir, dbPath: join(dataDir, 'catalog.sqlite') };
@@ -37,6 +43,29 @@ function createWindow(dbPath: string, dataDir: string): BrowserWindow {
 
   w.once('ready-to-show', () => w.show());
 
+  // A window that never appears is the worst way to fail: no error, no UI, nothing to
+  // report. Say why, and show the window anyway so the failure is at least visible.
+  w.webContents.on('did-fail-load', (_e, code, desc, url) => {
+    console.error(`[main] renderer failed to load (${code} ${desc}) from ${url}`);
+    if (!w.isDestroyed()) w.show();
+  });
+  w.webContents.on('render-process-gone', (_e, details) => {
+    console.error(`[main] renderer process gone: ${details.reason} (exitCode ${details.exitCode})`);
+  });
+  // Renderer console output is invisible without devtools; forward it so a packaged
+  // build can still be debugged from a terminal.
+  w.webContents.on('console-message', (e) => {
+    if (e.level === 'error' || e.level === 'warning') {
+      console.error(`[renderer:${e.level}] ${e.message} (${e.sourceId}:${e.lineNumber})`);
+    }
+  });
+  setTimeout(() => {
+    if (!w.isDestroyed() && !w.isVisible()) {
+      console.warn('[main] ready-to-show did not fire within 8s; showing the window regardless');
+      w.show();
+    }
+  }, 8000);
+
   // External links open in the real browser, never inside the app shell.
   w.webContents.setWindowOpenHandler(({ url }) => {
     void shell.openExternal(url);
@@ -55,10 +84,13 @@ function createWindow(dbPath: string, dataDir: string): BrowserWindow {
   return w;
 }
 
-app.whenReady().then(() => {
+void app.whenReady().then(() => {
   const { dbPath, dataDir } = paths();
+  console.log(`[main] ready; opening ${dbPath}`);
   openDb(dbPath);
+  console.log('[main] database open; creating window');
   createWindow(dbPath, dataDir);
+  console.log('[main] window created');
 
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow(dbPath, dataDir);

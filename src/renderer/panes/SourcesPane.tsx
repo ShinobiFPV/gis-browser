@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react';
 import type { HarvestProgress, SourceRow } from '@shared/types';
-import { FEATURE_TYPE_LABELS, groupOf, type FeatureType } from '@shared/taxonomy';
+import { FEATURE_TYPE_LABELS, groupOf } from '@shared/taxonomy';
 
 interface Props {
   sources: SourceRow[];
@@ -27,7 +27,7 @@ export function SourcesPane({ sources, progress, onRefresh, busy }: Props): Reac
   const grouped = useMemo(() => {
     const out = new Map<string, SourceRow[]>();
     for (const s of shown) {
-      const key = groupOf(s.feature_type as FeatureType);
+      const key = groupOf(s.feature_type);
       const list = out.get(key);
       if (list) list.push(s);
       else out.set(key, [s]);
@@ -86,7 +86,7 @@ export function SourcesPane({ sources, progress, onRefresh, busy }: Props): Reac
                   <div className="name">{s.name}</div>
                   <span className={`tier ${s.tier}`}>{s.tier}</span>
                   <div className="meta">
-                    <span>{FEATURE_TYPE_LABELS[s.feature_type as FeatureType]}</span>
+                    <span>{FEATURE_TYPE_LABELS[s.feature_type]}</span>
                     <span>{s.jurisdiction ?? '—'}</span>
                     <span>{s.verified_count != null ? `${s.verified_count.toLocaleString()} feat` : '? feat'}</span>
                     <span className={`status ${p?.phase ?? s.status}`}>

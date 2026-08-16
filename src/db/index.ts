@@ -29,8 +29,8 @@ export function openDb(path: string): Db {
   const { from, to } = migrate(db);
   if (from !== to) console.log(`[db] migrated schema ${from} -> ${to}`);
 
-  const inserted = seedSources(db);
-  if (inserted > 0) console.log(`[db] seeded ${inserted} source(s)`);
+  const seeded = seedSources(db);
+  if (seeded.inserted > 0) console.log(`[db] seeded ${seeded.inserted} new source(s)`);
 
   handle = db;
   return db;
@@ -47,32 +47,65 @@ export function closeDb(): void {
 }
 
 /**
- * Inserts any seed rows not already present, keyed on (endpoint, layer_id, feature_type).
- * Existing rows are left alone -- a user may have disabled a source, and re-seeding must
- * not silently re-enable it or wipe harvest state.
+ * Reconciles the database against the seed registry, keyed on
+ * (endpoint, layer_id, feature_type).
+ *
+ * The seed file is the source of truth for what a source IS -- its name, licence,
+ * attribution, name fields, vintage, SRID and verification metadata -- so those columns
+ * are overwritten on every startup. That matters: a corrected name field (BC's
+ * LAND_CLAIM_SETTLEMENT_NAME, say) has to reach existing installs, not just fresh ones.
+ *
+ * Harvest state is the database's own and is never touched: status, last_harvested_at and
+ * feature_count survive re-seeding, so a disabled source stays disabled and a completed
+ * harvest is not marked unharvested.
  */
-export function seedSources(db: Db): number {
+export function seedSources(db: Db): { inserted: number; updated: number } {
+  const exists = db.prepare(
+    'SELECT id FROM sources WHERE endpoint = ? AND layer_id = ? AND feature_type = ?',
+  );
+
   const insert = db.prepare(`
     INSERT INTO sources (
       name, kind, tier, endpoint, layer_id, feature_type, jurisdiction, vintage,
-      licence, attribution, name_fields, status, source_srid, verified_count, verified_at, notes
+      licence, attribution, name_fields, status, source_srid, verified_count, verified_at, notes,
+      identity_field
     ) VALUES (
       @name, @kind, @tier, @endpoint, @layer_id, @feature_type, @jurisdiction, @vintage,
-      @licence, @attribution, @name_fields, 'seeded', @source_srid, @verified_count, @verified_at, @notes
+      @licence, @attribution, @name_fields, 'seeded', @source_srid, @verified_count, @verified_at, @notes,
+      @identity_field
     )
-    ON CONFLICT(endpoint, layer_id, feature_type) DO NOTHING
+    ON CONFLICT(endpoint, layer_id, feature_type) DO UPDATE SET
+      name           = excluded.name,
+      kind           = excluded.kind,
+      tier           = excluded.tier,
+      jurisdiction   = excluded.jurisdiction,
+      vintage        = excluded.vintage,
+      licence        = excluded.licence,
+      attribution    = excluded.attribution,
+      name_fields    = excluded.name_fields,
+      source_srid    = excluded.source_srid,
+      verified_count = excluded.verified_count,
+      verified_at    = excluded.verified_at,
+      notes          = excluded.notes,
+      identity_field = excluded.identity_field
+      -- status, last_harvested_at and feature_count are deliberately not touched.
   `);
 
   const run = db.transaction(() => {
-    let n = 0;
+    let inserted = 0;
+    let updated = 0;
     for (const s of SEED_SOURCES) {
       assertFeatureType(s.featureType, `seed source "${s.name}"`);
-      const info = insert.run({
+      const layerId = s.layerId ?? '';
+      const already = exists.get(s.endpoint, layerId, s.featureType) !== undefined;
+      insert.run({
         name: s.name,
         kind: s.kind,
         tier: s.tier,
         endpoint: s.endpoint,
-        layer_id: s.layerId,
+        // Empty string rather than NULL: SQLite treats NULLs as distinct in UNIQUE
+        // indexes, which would let every Tier B source re-insert on each startup.
+        layer_id: layerId,
         feature_type: s.featureType,
         jurisdiction: s.jurisdiction,
         vintage: s.vintage,
@@ -83,10 +116,12 @@ export function seedSources(db: Db): number {
         verified_count: s.verifiedCount,
         verified_at: s.verifiedAt,
         notes: s.notes ?? null,
+        identity_field: s.identityField ?? null,
       });
-      n += info.changes;
+      if (already) updated++;
+      else inserted++;
     }
-    return n;
+    return { inserted, updated };
   });
 
   return run();
