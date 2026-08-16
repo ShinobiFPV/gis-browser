@@ -18,9 +18,13 @@ export const CH = {
   searchRun: 'search:run',
   geometryGet: 'geometry:get',
   exportRun: 'export:run',
+  exportPreview: 'export:preview',
+  exportReveal: 'export:reveal',
+  exportSetFolder: 'export:setFolder',
 
   // main -> renderer events
   harvestProgress: 'harvest:progress',
+  exportProgress: 'export:progress',
   log: 'app:log',
 } as const;
 
@@ -68,6 +72,52 @@ export interface GeometryResult {
   generalisationDeg: number | null;
 }
 
+export type ExportFormat = 'geojson' | 'svg';
+
+export interface ExportRequest {
+  /** Catalog feature ids, in the order they should appear in the file. */
+  featureIds: number[];
+  format: ExportFormat;
+  /** 1..100. 100 means no simplification at all. */
+  retentionPct: number;
+  /** SVG only. EPSG code from shared/projections. */
+  srid: number;
+  /** SVG only, in pixels. */
+  width: number;
+  height: number;
+  padding: number;
+  /**
+   * Compute vertex counts and warnings without writing a file. Backs the live before/after
+   * readout, which has to run real simplification -- a linear estimate is wrong, because
+   * topology-preserving Visvalingam does not hit the requested percentage exactly.
+   */
+  previewOnly?: boolean;
+}
+
+export interface ExportResult {
+  /** Absolute path written, or null for a preview. */
+  path: string | null;
+  format: ExportFormat;
+  featureCount: number;
+  verticesBefore: number;
+  verticesAfter: number;
+  bytes: number;
+  /** Ready to paste into a lower third. Joined when an export mixes sources. */
+  attribution: string;
+  /** Every distinct licence in the export, so a mixed-licence set is visible. */
+  licences: string[];
+  /** Lost holes, unclosed rings, source-side generalisation -- never silent. */
+  warnings: string[];
+  elapsedMs: number;
+}
+
+export interface ExportProgress {
+  phase: 'fetching' | 'simplifying' | 'writing' | 'done' | 'failed';
+  done: number;
+  total: number;
+  message: string;
+}
+
 export interface LogLine {
   level: 'debug' | 'info' | 'warn' | 'error';
   scope: string;
@@ -87,6 +137,11 @@ export interface GisBridge {
   harvestCancel(): Promise<void>;
   searchRun(req: SearchRequest): Promise<SearchResponse>;
   geometryGet(featureId: number): Promise<GeometryResult>;
+  exportRun(req: ExportRequest): Promise<ExportResult>;
+  exportPreview(req: ExportRequest): Promise<ExportResult>;
+  exportReveal(path: string): Promise<void>;
+  exportSetFolder(): Promise<{ ok: boolean; folder?: string }>;
   onHarvestProgress(cb: (p: HarvestProgress) => void): () => void;
+  onExportProgress(cb: (p: ExportProgress) => void): () => void;
   onLog(cb: (l: LogLine) => void): () => void;
 }

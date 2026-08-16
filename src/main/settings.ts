@@ -13,9 +13,23 @@ import { DEFAULT_MODEL, MODELS } from './anthropic';
 
 export interface Preferences {
   anthropicModel: string;
+  /**
+   * Where exports land. Set once, then never asked about again -- the brief bans modal
+   * dialogs in the search-to-export path, and a native save dialog per export is exactly
+   * the interruption it is describing. Changing this folder is a Settings action, which
+   * is outside that path.
+   */
+  exportFolder: string;
 }
 
-const DEFAULTS: Preferences = { anthropicModel: DEFAULT_MODEL };
+function defaultExportFolder(): string {
+  // documents rather than userData: these are the artist's deliverables, not app state,
+  // and they need to be findable from Illustrator's open dialog without hunting through
+  // AppData.
+  return join(app.getPath('documents'), 'GIS Browser Exports');
+}
+
+const DEFAULTS: Preferences = { anthropicModel: DEFAULT_MODEL, exportFolder: '' };
 
 let cache: Preferences | null = null;
 
@@ -27,7 +41,7 @@ function load(): Preferences {
   if (cache) return cache;
   const path = file();
   if (!existsSync(path)) {
-    cache = { ...DEFAULTS };
+    cache = { ...DEFAULTS, exportFolder: defaultExportFolder() };
     return cache;
   }
   try {
@@ -37,10 +51,14 @@ function load(): Preferences {
       anthropicModel: MODELS.some((m) => m.id === raw.anthropicModel)
         ? raw.anthropicModel!
         : DEFAULTS.anthropicModel,
+      exportFolder:
+        typeof raw.exportFolder === 'string' && raw.exportFolder.trim()
+          ? raw.exportFolder
+          : defaultExportFolder(),
     };
   } catch {
     console.warn('[settings] preferences.json is unreadable; using defaults');
-    cache = { ...DEFAULTS };
+    cache = { ...DEFAULTS, exportFolder: defaultExportFolder() };
   }
   return cache;
 }

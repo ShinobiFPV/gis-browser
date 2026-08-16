@@ -1,5 +1,11 @@
-import { ipcMain, type BrowserWindow } from 'electron';
-import { CH, type SearchRequest, type SearchResponse } from '@shared/ipc';
+import { dialog, ipcMain, shell, type BrowserWindow } from 'electron';
+import {
+  CH,
+  type ExportRequest,
+  type ExportResult,
+  type SearchRequest,
+  type SearchResponse,
+} from '@shared/ipc';
 import type { AppSettings, SourceRow } from '@shared/types';
 import { getDb } from '@db/index';
 import { listSources, setSourceStatus } from '@db/queries';
@@ -7,6 +13,7 @@ import { clearKey, hasKey, setKey } from './keychain';
 import { cancelHarvest, startHarvest } from './harvester-host';
 import { getGeometry } from './geometry-service';
 import { runSearch } from './search-service';
+import { runExport } from './export-service';
 import { MODELS } from './anthropic';
 import { getSetting, setSetting } from './settings';
 
@@ -22,6 +29,7 @@ export function registerIpc(win: BrowserWindow, ctx: { dbPath: string; dataDir: 
     dataDir: ctx.dataDir,
     anthropicModel: getSetting('anthropicModel'),
     models: MODELS,
+    exportFolder: getSetting('exportFolder'),
   }));
 
   ipcMain.handle(CH.keySet, (_e, key: unknown) => {
@@ -72,7 +80,66 @@ export function registerIpc(win: BrowserWindow, ctx: { dbPath: string; dataDir: 
     return getGeometry(featureId);
   });
 
-  ipcMain.handle(CH.exportRun, () => {
-    throw new Error('export is not implemented until M5');
+  /**
+   * Export writes straight to the configured folder and reports the path back.
+   *
+   * There is deliberately no save dialog: the brief bans modal dialogs anywhere in the
+   * search-to-export path, and a native file picker per export is exactly that. The folder
+   * is chosen once in Settings, which is outside the path, and `export:reveal` opens the
+   * result in Explorer afterwards.
+   */
+  ipcMain.handle(CH.exportRun, async (_e, req: ExportRequest): Promise<ExportResult> => {
+    validateExportRequest(req);
+    try {
+      return await runExport(req, (p) => {
+        if (!win.isDestroyed()) win.webContents.send(CH.exportProgress, p);
+      });
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      if (!win.isDestroyed()) {
+        win.webContents.send(CH.exportProgress, {
+          phase: 'failed',
+          done: 0,
+          total: req.featureIds?.length ?? 0,
+          message,
+        });
+      }
+      throw err;
+    }
   });
+
+  // Same pipeline, no file written. Backs the live before/after vertex readout, which has
+  // to run the real simplification -- a linear estimate is simply wrong for Visvalingam.
+  ipcMain.handle(CH.exportPreview, async (_e, req: ExportRequest): Promise<ExportResult> => {
+    validateExportRequest(req);
+    return runExport({ ...req, previewOnly: true });
+  });
+
+  ipcMain.handle(CH.exportReveal, (_e, path: unknown) => {
+    if (typeof path !== 'string' || !path) throw new Error('export:reveal expects a path');
+    shell.showItemInFolder(path);
+  });
+
+  ipcMain.handle(CH.exportSetFolder, async () => {
+    const picked = await dialog.showOpenDialog(win, {
+      title: 'Where should exports be written?',
+      defaultPath: getSetting('exportFolder'),
+      properties: ['openDirectory', 'createDirectory'],
+    });
+    if (picked.canceled || !picked.filePaths[0]) return { ok: false };
+    setSetting('exportFolder', picked.filePaths[0]);
+    return { ok: true, folder: picked.filePaths[0] };
+  });
+}
+
+function validateExportRequest(req: ExportRequest): void {
+  if (!req || !Array.isArray(req.featureIds) || req.featureIds.some((n) => typeof n !== 'number')) {
+    throw new Error('export expects an array of numeric feature ids');
+  }
+  if (req.featureIds.length === 0) {
+    throw new Error('Select at least one boundary before exporting.');
+  }
+  if (req.format !== 'geojson' && req.format !== 'svg') {
+    throw new Error(`Unknown export format "${String(req.format)}"`);
+  }
 }

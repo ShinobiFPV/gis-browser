@@ -89,6 +89,31 @@ export function toWgs84(geometry: Geometry, sourceSrid: number, context: string)
   return { type: geometry.type, coordinates: mapCoords(geometry.coordinates, convert) };
 }
 
+/**
+ * Reprojects OUT of EPSG:4326 into a projected CRS, for SVG export.
+ *
+ * The inverse of toWgs84. Kept here so every proj4 definition in the app lives in one
+ * file: an SVG can only be drawn in a CRS the harvester already knows how to read back.
+ */
+export function fromWgs84(geometry: Geometry, targetSrid: number, context: string): Geometry {
+  assertKnownSrid(targetSrid, context);
+  if (targetSrid === 4326 || targetSrid === 4269) return geometry;
+
+  const to = `EPSG:${targetSrid}`;
+  const convert: Transform = (p) => {
+    const [x, y] = proj4('EPSG:4326', to, [p[0] as number, p[1] as number]);
+    if (!Number.isFinite(x) || !Number.isFinite(y)) {
+      throw new Error(
+        `Projecting ${context} into EPSG:${targetSrid} produced a non-finite coordinate from ` +
+          `lon/lat ${String(p[0])},${String(p[1])}. The geometry lies outside the projection's valid area.`,
+      );
+    }
+    return [x, y];
+  };
+
+  return { type: geometry.type, coordinates: mapCoords(geometry.coordinates, convert) };
+}
+
 /** Swaps every position in place. Used only when a WFS is caught emitting lat,lon. */
 export function swapAxes(geometry: Geometry): Geometry {
   return {

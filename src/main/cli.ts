@@ -8,6 +8,8 @@ import { runSource, UnsupportedSourceError } from '../harvester/run-source';
 import { resolve as resolveQuery } from '@resolve/resolve';
 import { getGeometry } from './geometry-service';
 import { runSearch } from './search-service';
+import { runExport } from './export-service';
+import { DEFAULT_SVG_SRID } from '@shared/projections';
 
 /**
  * Headless harvest runner.
@@ -36,10 +38,33 @@ interface Args {
   find: string | null;
   /** Route --find through the Claude parse and rank passes. */
   llm: boolean;
+  /** Export the results of --find. 'geojson' or 'svg'. */
+  exportFormat: 'geojson' | 'svg' | null;
+  /** Percentage of vertices to retain. 100 means no simplification. */
+  retention: number;
+  /** Export every candidate as one file rather than just the top hit. */
+  exportAll: boolean;
+  /** EPSG code for an SVG export. */
+  srid: number;
+  /** Catalog feature ids to export directly, bypassing search. Repeatable. */
+  featureIds: number[];
 }
 
 function parseArgs(argv: string[]): Args {
-  const out: Args = { ids: [], types: [], names: [], list: false, limit: null, find: null, llm: false };
+  const out: Args = {
+    ids: [],
+    types: [],
+    names: [],
+    list: false,
+    limit: null,
+    find: null,
+    llm: false,
+    exportFormat: null,
+    retention: 100,
+    exportAll: false,
+    srid: DEFAULT_SVG_SRID,
+    featureIds: [],
+  };
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
     const next = argv[i + 1];
@@ -58,10 +83,27 @@ function parseArgs(argv: string[]): Args {
     } else if (a === '--find' && next) {
       out.find = next;
       i++;
+    } else if (a === '--export' && next) {
+      if (next !== 'geojson' && next !== 'svg') {
+        throw new Error(`--export takes "geojson" or "svg", not "${next}"`);
+      }
+      out.exportFormat = next;
+      i++;
+    } else if (a === '--feature' && next) {
+      out.featureIds.push(Number(next));
+      i++;
+    } else if (a === '--retention' && next) {
+      out.retention = Number(next);
+      i++;
+    } else if (a === '--srid' && next) {
+      out.srid = Number(next);
+      i++;
     } else if (a === '--list') {
       out.list = true;
     } else if (a === '--llm') {
       out.llm = true;
+    } else if (a === '--all') {
+      out.exportAll = true;
     }
   }
   return out;
@@ -88,6 +130,7 @@ async function runFind(
   text: string,
   limit: number,
   useLlm: boolean,
+  args: Args,
 ): Promise<number> {
   // With --llm this is the exact path the UI takes, including the fallback to the local
   // resolver when the key is missing or the API misbehaves.
@@ -129,8 +172,8 @@ async function runFind(
   console.log(`\n[cli] ${candidates.length} candidate(s):`);
   for (const [i, c] of candidates.entries()) {
     console.log(
-      `  ${i + 1}. ${c.matchScore.toFixed(3)}  ${c.officialName}  [${c.featureType}/${c.jurisdiction ?? '—'}]` +
-        `  cached=${c.hasCachedGeometry}`,
+      `  ${i + 1}. ${c.matchScore.toFixed(3)}  #${c.featureId}  ${c.officialName}  ` +
+        `[${c.featureType}/${c.jurisdiction ?? '—'}]  cached=${c.hasCachedGeometry}`,
     );
     console.log(`         via ${c.matchedVia} on "${c.matchedAlias}"  <- ${c.sourceName}`);
     console.log(`         ${c.justification ?? ''}`);
@@ -141,7 +184,7 @@ async function runFind(
 
   const first = await getGeometry(top.featureId);
   console.log(
-    `  ${first.fromCache ? 'CACHE' : 'NETWORK'}  ${first.vertexCount.toLocaleString()} vertices, ` +
+    `  ${first.fromCache ? 'CACHE' : 'NETWORK'}  ${first.vertexCount} vertices, ` +
       `${first.partCount} part(s), ${first.fetchMs}ms`,
   );
   console.log(`  bbox: ${first.bbox ? first.bbox.map((n) => n.toFixed(4)).join(', ') : '(none)'}`);
@@ -151,12 +194,48 @@ async function runFind(
   const second = await getGeometry(top.featureId);
   console.log(
     `  second read: ${second.fromCache ? 'CACHE' : 'NETWORK'} in ${second.fetchMs}ms ` +
-      `(${second.vertexCount.toLocaleString()} vertices)`,
+      `(${second.vertexCount} vertices)`,
   );
   if (!second.fromCache) {
     console.error('  FAILED: the second read should have come from the cache');
     return 1;
   }
+
+  if (args.exportFormat) {
+    const ids = args.exportAll ? candidates.map((c) => c.featureId) : [top.featureId];
+    console.log(
+      `\n[cli] exporting ${ids.length} feature(s) as ${args.exportFormat} at ` +
+        `${args.retention}% retention` +
+        (args.exportFormat === 'svg' ? ` in EPSG:${args.srid}` : ''),
+    );
+
+    const result = await runExport(
+      {
+        featureIds: ids,
+        format: args.exportFormat,
+        retentionPct: args.retention,
+        srid: args.srid,
+        width: 1920,
+        height: 1080,
+        padding: 40,
+      },
+      (p) => {
+        if (p.phase !== 'fetching' || p.total > 1) {
+          console.log(`      ${p.phase} ${p.done}/${p.total} ${p.message}`);
+        }
+      },
+    );
+
+    console.log(`  wrote ${result.path}`);
+    console.log(
+      `  ${result.featureCount} feature(s), ${result.verticesBefore} -> ${result.verticesAfter} vertices, ` +
+        `${(result.bytes / 1024).toFixed(1)} kB in ${result.elapsedMs}ms`,
+    );
+    console.log(`  credit: ${result.attribution || '(none)'}`);
+    console.log(`  licences: ${result.licences.join(' | ') || '(none)'}`);
+    for (const w of result.warnings) console.log(`  WARNING: ${w}`);
+  }
+
   return 0;
 }
 
@@ -175,8 +254,40 @@ async function main(): Promise<number> {
     return 0;
   }
 
+  // Direct export of known feature ids, bypassing search. Exists so a multi-feature
+  // export -- the topology-sensitive path -- can be driven end to end from a terminal.
+  if (args.featureIds.length > 0 && args.exportFormat) {
+    console.log(
+      `[cli] exporting ${args.featureIds.length} feature(s) as ${args.exportFormat} at ` +
+        `${args.retention}% retention` +
+        (args.exportFormat === 'svg' ? ` in EPSG:${args.srid}` : ''),
+    );
+    const result = await runExport(
+      {
+        featureIds: args.featureIds,
+        format: args.exportFormat,
+        retentionPct: args.retention,
+        srid: args.srid,
+        width: 1920,
+        height: 1080,
+        padding: 40,
+      },
+      (p) => console.log(`      ${p.phase} ${p.done}/${p.total} ${p.message}`),
+    );
+    console.log(`  wrote ${result.path}`);
+    console.log(
+      `  ${result.featureCount} feature(s), ${result.verticesBefore} -> ${result.verticesAfter} vertices, ` +
+        `${(result.bytes / 1024).toFixed(1)} kB in ${result.elapsedMs}ms`,
+    );
+    console.log(`  credit: ${result.attribution || '(none)'}`);
+    console.log(`  licences: ${result.licences.join(' | ') || '(none)'}`);
+    for (const w of result.warnings) console.log(`  WARNING: ${w}`);
+    closeDb();
+    return 0;
+  }
+
   if (args.find) {
-    return runFind(db, args.find, args.limit ?? 5, args.llm);
+    return runFind(db, args.find, args.limit ?? 5, args.llm, args);
   }
 
   const sources = selectSources(db, args);

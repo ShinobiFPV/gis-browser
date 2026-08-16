@@ -8,6 +8,10 @@ interface Props {
   promptRef: RefObject<HTMLTextAreaElement | null>;
   selected: Candidate | null;
   onSelect: (c: Candidate | null) => void;
+  /** Ticked for a multi-feature export. Empty means "just export the selected one". */
+  marked: Candidate[];
+  onToggleMark: (c: Candidate) => void;
+  onSetMarks: (cs: Candidate[]) => void;
   hasKey: boolean;
   /** Dev harness only; see App.tsx. Runs this query on mount and picks the top hit. */
   demoQuery?: string | null;
@@ -16,7 +20,16 @@ interface Props {
 /** The brief is explicit: always show the top five, never auto-export any of them. */
 const ALWAYS_SHOWN = 5;
 
-export function SearchPane({ promptRef, selected, onSelect, hasKey, demoQuery }: Props): React.JSX.Element {
+export function SearchPane({
+  promptRef,
+  selected,
+  onSelect,
+  marked,
+  onToggleMark,
+  onSetMarks,
+  hasKey,
+  demoQuery,
+}: Props): React.JSX.Element {
   const [prompt, setPrompt] = useState(demoQuery ?? '');
   const [useLlm, setUseLlm] = useState(false);
   const [typeFilter, setTypeFilter] = useState('');
@@ -50,6 +63,9 @@ export function SearchPane({ promptRef, selected, onSelect, hasKey, demoQuery }:
       // Never auto-select, even on a single high-confidence hit. A wrong boundary on air
       // costs far more than a click. (The dev harness is the one exception.)
       onSelect(autoSelectTop ? (res.candidates[0] ?? null) : null);
+      // Marks belong to the result set that produced them. Carrying them across a new
+      // search would let a riding from a previous query ride along into an export.
+      onSetMarks([]);
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
       setResponse(null);
@@ -151,13 +167,42 @@ export function SearchPane({ promptRef, selected, onSelect, hasKey, demoQuery }:
           </div>
         )}
 
+        {/* Multi-feature export: "all federal ridings in Ontario" is a set, not a pick.
+            Ticking is deliberately separate from selecting, so the preview keeps showing
+            one boundary at a time while the export set builds up. */}
+        {candidates.length > 1 && (
+          <div className="mark-bar">
+            <label className="toggle">
+              <input
+                type="checkbox"
+                checked={marked.length === candidates.length && candidates.length > 0}
+                ref={(el) => {
+                  if (el) el.indeterminate = marked.length > 0 && marked.length < candidates.length;
+                }}
+                onChange={(e) => onSetMarks(e.target.checked ? candidates : [])}
+              />
+              {marked.length > 0 ? `${marked.length} marked for export` : `mark all ${candidates.length}`}
+            </label>
+          </div>
+        )}
+
         {shown.map((c, i) => (
           <div
             key={c.featureId}
-            className={`cand${selected?.featureId === c.featureId ? ' sel' : ''}`}
+            className={`cand${selected?.featureId === c.featureId ? ' sel' : ''}${
+              marked.some((m) => m.featureId === c.featureId) ? ' marked' : ''
+            }`}
             onClick={() => onSelect(c)}
             title={c.justification ?? ''}
           >
+            <input
+              type="checkbox"
+              className="cand-mark"
+              checked={marked.some((m) => m.featureId === c.featureId)}
+              title="include in a multi-feature export"
+              onClick={(e) => e.stopPropagation()}
+              onChange={() => onToggleMark(c)}
+            />
             <div className="cand-rank">{i + 1}</div>
             <LocatorThumb bbox={c.bbox} active={selected?.featureId === c.featureId} />
             <div className="cand-main">

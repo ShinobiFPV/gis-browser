@@ -159,4 +159,6 @@ export interface AppSettings {
   dataDir: string;
   anthropicModel: string;
   models: ModelChoice[];
+  /** Where exports are written. Changed in Settings, never asked for mid-export. */
+  exportFolder: string;
 }

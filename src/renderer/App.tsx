@@ -13,6 +13,8 @@ export function App(): React.JSX.Element {
   const [progress, setProgress] = useState<Record<number, HarvestProgress>>({});
   const [lastLog, setLastLog] = useState<LogLine | null>(null);
   const [selected, setSelected] = useState<Candidate | null>(null);
+  /** Ticked for a multi-feature export. Lives here so Search and Export share it. */
+  const [marked, setMarked] = useState<Candidate[]>([]);
   const [geometry, setGeometry] = useState<GeometryResult | null>(null);
   const [showSettings, setShowSettings] = useState(
     new URLSearchParams(location.search).has('settings'),
@@ -26,6 +28,14 @@ export function App(): React.JSX.Element {
 
   const refreshSettings = useCallback(async () => {
     setSettings(await window.gis.settingsGet());
+  }, []);
+
+  const toggleMark = useCallback((c: Candidate) => {
+    setMarked((prev) =>
+      prev.some((m) => m.featureId === c.featureId)
+        ? prev.filter((m) => m.featureId !== c.featureId)
+        : [...prev, c],
+    );
   }, []);
 
   useEffect(() => {
@@ -108,11 +118,20 @@ export function App(): React.JSX.Element {
           promptRef={promptRef}
           selected={selected}
           onSelect={setSelected}
+          marked={marked}
+          onToggleMark={toggleMark}
+          onSetMarks={setMarked}
           hasKey={settings?.hasAnthropicKey ?? false}
           demoQuery={demoQuery}
         />
         <PreviewPane candidate={selected} onGeometry={setGeometry} />
-        <ExportPane candidate={selected} geometry={geometry} />
+        <ExportPane
+          candidate={selected}
+          marked={marked}
+          geometry={geometry}
+          settings={settings}
+          onSettingsChanged={() => void refreshSettings()}
+        />
       </div>
 
       <footer className="statusbar">

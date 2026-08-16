@@ -82,7 +82,18 @@ function createWindow(dbPath: string, dataDir: string): BrowserWindow {
 
   const devUrl = process.env['ELECTRON_RENDERER_URL'];
   if (isDev && devUrl) {
-    void w.loadURL(devUrl);
+    // The renderer's dev harness reads ?demo= and ?settings from location.search (see
+    // App.tsx). electron-vite owns ELECTRON_RENDERER_URL and overwrites any value set
+    // before it spawns Electron, so the query cannot be smuggled in that way; these two
+    // env vars are the supported channel. Development only -- a packaged build takes the
+    // loadFile branch below and can reach neither.
+    const params = new URLSearchParams();
+    const demo = process.env['GIS_DEMO'];
+    if (demo) params.set('demo', demo);
+    if (process.env['GIS_SETTINGS']) params.set('settings', '1');
+
+    const query = params.toString();
+    void w.loadURL(query ? `${devUrl}${devUrl.includes('?') ? '&' : '?'}${query}` : devUrl);
   } else {
     void w.loadFile(join(import.meta.dirname, '../renderer/index.html'));
   }

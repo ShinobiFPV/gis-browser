@@ -685,3 +685,86 @@ label.field > span {
 .statusbar .spacer {
   flex: 1;
 }
+
+/* --- M5 export --- */
+
+/* The candidate row gained a leading checkbox for multi-feature export. */
+.cand {
+  grid-template-columns: 14px 14px 46px 1fr auto;
+}
+
+.cand-mark {
+  margin: 3px 0 0 0;
+  accent-color: var(--accent);
+  cursor: pointer;
+}
+
+.cand.marked {
+  box-shadow: inset 2px 0 0 var(--accent);
+}
+
+.mark-bar {
+  display: flex;
+  align-items: center;
+  padding: 4px 8px;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg-raised);
+  font-size: 11px;
+  color: var(--text-dim);
+}
+
+.field-note {
+  font-size: 10px;
+  color: var(--text-faint);
+  margin: -4px 0 6px 0;
+  line-height: 1.35;
+}
+
+/* Warnings are never fatal and never hidden: a lost hole or source-side generalisation
+   has to be readable before the file is written, not after it airs. */
+.warn-line {
+  font-size: 11px;
+  line-height: 1.4;
+  color: var(--warn);
+  background: #221a05;
+  border-left: 2px solid var(--warn);
+  padding: 4px 6px;
+  margin: 4px 0;
+}
+
+.warn-line.error {
+  color: var(--err);
+  background: #2a1113;
+  border-left-color: var(--err);
+}
+
+.progress-line {
+  font-size: 11px;
+  color: var(--text-dim);
+  padding: 4px 0;
+}
+
+.done-line {
+  font-size: 11px;
+  color: var(--text-dim);
+  border-left: 2px solid var(--ok);
+  background: #0d2010;
+  padding: 5px 6px;
+  margin-top: 6px;
+  word-break: break-all;
+}
+
+.folder-line {
+  font-size: 10px;
+  color: var(--text-faint);
+  margin: 2px 0 6px 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.readout .dim,
+b.dim {
+  color: var(--text-faint);
+  font-weight: normal;
+}
