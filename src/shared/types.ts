@@ -127,6 +127,8 @@ export interface Candidate {
   matchedVia?: 'fts-all' | 'fts-any' | 'fuzzy';
   /** One line explaining the ranking, shown in the UI. */
   justification?: string;
+  /** True when Claude scored this candidate rather than the local ranker alone. */
+  rankedByLlm?: boolean;
 }
 
 export interface HarvestProgress {
@@ -140,9 +142,21 @@ export interface HarvestProgress {
   error?: string;
 }
 
+/** Capability summary for a selectable Claude model. Mirrors main/anthropic.ts. */
+export interface ModelChoice {
+  id: string;
+  label: string;
+  structuredOutputs: boolean;
+  effort: boolean;
+  adaptiveThinking: boolean;
+  note?: string;
+}
+
 export interface AppSettings {
   /** Whether an Anthropic key is present. The key itself never leaves main. */
   hasAnthropicKey: boolean;
   dbPath: string;
   dataDir: string;
+  anthropicModel: string;
+  models: ModelChoice[];
 }

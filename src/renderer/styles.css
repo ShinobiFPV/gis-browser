@@ -56,8 +56,65 @@ kbd {
 
 .app {
   display: grid;
-  grid-template-rows: 30px 1fr 20px;
+  grid-template-rows: 30px auto 1fr 20px;
   height: 100%;
+}
+
+.titlebar-button {
+  background: none;
+  border: 1px solid transparent;
+  color: var(--text-dim);
+  font-size: 11px;
+  padding: 2px 8px;
+}
+
+.titlebar-button:hover:not(:disabled) {
+  border-color: var(--border-strong);
+  color: var(--text);
+}
+
+.titlebar-button b {
+  color: var(--text);
+}
+
+.settings-strip {
+  background: var(--bg-pane);
+  border-bottom: 1px solid var(--border-strong);
+  padding: 8px 10px;
+}
+
+.settings-row {
+  display: flex;
+  align-items: flex-end;
+  gap: 8px;
+}
+
+.settings-row .field {
+  margin-bottom: 0;
+}
+
+.settings-row .spacer {
+  flex: 1;
+}
+
+.settings-key {
+  min-width: 320px;
+}
+
+.settings-model {
+  min-width: 280px;
+}
+
+.settings-note {
+  margin-top: 6px;
+  font-size: 10px;
+  color: var(--text-faint);
+  max-width: 900px;
+  line-height: 1.5;
+}
+
+.settings-note .warn {
+  color: var(--warn);
 }
 
 .titlebar {

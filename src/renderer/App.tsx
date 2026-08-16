@@ -5,6 +5,7 @@ import { SourcesPane } from './panes/SourcesPane';
 import { SearchPane } from './panes/SearchPane';
 import { PreviewPane } from './panes/PreviewPane';
 import { ExportPane } from './panes/ExportPane';
+import { SettingsStrip } from './components/SettingsStrip';
 
 export function App(): React.JSX.Element {
   const [settings, setSettings] = useState<AppSettings | null>(null);
@@ -13,6 +14,9 @@ export function App(): React.JSX.Element {
   const [lastLog, setLastLog] = useState<LogLine | null>(null);
   const [selected, setSelected] = useState<Candidate | null>(null);
   const [geometry, setGeometry] = useState<GeometryResult | null>(null);
+  const [showSettings, setShowSettings] = useState(
+    new URLSearchParams(location.search).has('settings'),
+  );
 
   const promptRef = useRef<HTMLTextAreaElement>(null);
 
@@ -20,8 +24,12 @@ export function App(): React.JSX.Element {
     setSources(await window.gis.sourcesList());
   }, []);
 
+  const refreshSettings = useCallback(async () => {
+    setSettings(await window.gis.settingsGet());
+  }, []);
+
   useEffect(() => {
-    void window.gis.settingsGet().then(setSettings);
+    void refreshSettings();
     void refreshSources();
 
     const offProgress = window.gis.onHarvestProgress((p) => {
@@ -34,7 +42,7 @@ export function App(): React.JSX.Element {
       offProgress();
       offLog();
     };
-  }, [refreshSources]);
+  }, [refreshSources, refreshSettings]);
 
   // Keyboard-driven: "/" jumps to the prompt from anywhere outside a text field.
   useEffect(() => {
@@ -53,9 +61,10 @@ export function App(): React.JSX.Element {
 
   /**
    * Dev harness. `?demo=<query>` runs a search and selects the top hit on start, so the
-   * whole search -> fetch -> render path can be driven without a human clicking. Query
-   * strings only reach the renderer via ELECTRON_RENDERER_URL in development; a packaged
-   * build uses loadFile and can never trigger this.
+   * whole search -> fetch -> render path can be driven without a human clicking, and
+   * `?settings` opens the settings strip. Query strings only reach the renderer via
+   * ELECTRON_RENDERER_URL in development; a packaged build uses loadFile and can never
+   * trigger either.
    */
   const demoQuery = new URLSearchParams(location.search).get('demo');
 
@@ -76,10 +85,22 @@ export function App(): React.JSX.Element {
           <b>{sources.filter((s) => s.tier === 'B').length}</b> tier B
         </div>
         <div className="spacer" />
-        <div className="stat">
-          Claude key: <b>{settings?.hasAnthropicKey ? 'stored' : 'not set'}</b>
-        </div>
+        <button
+          className="titlebar-button"
+          onClick={() => setShowSettings((v) => !v)}
+          title="API key and model"
+        >
+          Claude: <b>{settings?.hasAnthropicKey ? (settings.models.find((m) => m.id === settings.anthropicModel)?.label ?? 'key stored') : 'no key'}</b>
+        </button>
       </header>
+
+      {showSettings && settings && (
+        <SettingsStrip
+          settings={settings}
+          onChanged={refreshSettings}
+          onClose={() => setShowSettings(false)}
+        />
+      )}
 
       <div className="panes">
         <SourcesPane sources={sources} progress={progress} onRefresh={refreshSources} busy={harvesting} />

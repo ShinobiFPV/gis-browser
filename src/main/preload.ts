@@ -11,6 +11,7 @@ const bridge: GisBridge = {
   settingsGet: () => ipcRenderer.invoke(CH.settingsGet),
   keySet: (key: string) => ipcRenderer.invoke(CH.keySet, key),
   keyClear: () => ipcRenderer.invoke(CH.keyClear),
+  modelSet: (id: string) => ipcRenderer.invoke(CH.modelSet, id),
   sourcesList: () => ipcRenderer.invoke(CH.sourcesList),
   sourcesSetStatus: (id: number, status: SourceRow['status']) => ipcRenderer.invoke(CH.sourcesSetStatus, id, status),
   harvestStart: (sourceIds: number[]) => ipcRenderer.invoke(CH.harvestStart, sourceIds),

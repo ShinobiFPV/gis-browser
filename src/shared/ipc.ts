@@ -10,6 +10,7 @@ export const CH = {
   settingsGet: 'settings:get',
   keySet: 'key:set',
   keyClear: 'key:clear',
+  modelSet: 'model:set',
   sourcesList: 'sources:list',
   sourcesSetStatus: 'sources:setStatus',
   harvestStart: 'harvest:start',
@@ -79,6 +80,7 @@ export interface GisBridge {
   settingsGet(): Promise<AppSettings>;
   keySet(key: string): Promise<{ ok: boolean; error?: string }>;
   keyClear(): Promise<{ ok: boolean }>;
+  modelSet(id: string): Promise<{ ok: boolean; error?: string }>;
   sourcesList(): Promise<SourceRow[]>;
   sourcesSetStatus(id: number, status: SourceRow['status']): Promise<void>;
   harvestStart(sourceIds: number[]): Promise<{ ok: boolean; error?: string }>;

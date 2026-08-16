@@ -3,10 +3,12 @@ import { CH, type SearchRequest, type SearchResponse } from '@shared/ipc';
 import type { AppSettings, SourceRow } from '@shared/types';
 import { getDb } from '@db/index';
 import { listSources, setSourceStatus } from '@db/queries';
-import { resolve as resolveQuery } from '@resolve/resolve';
 import { clearKey, hasKey, setKey } from './keychain';
 import { cancelHarvest, startHarvest } from './harvester-host';
 import { getGeometry } from './geometry-service';
+import { runSearch } from './search-service';
+import { MODELS } from './anthropic';
+import { getSetting, setSetting } from './settings';
 
 /**
  * Every channel in shared/ipc.ts is registered here exactly once. Handlers stay thin:
@@ -18,6 +20,8 @@ export function registerIpc(win: BrowserWindow, ctx: { dbPath: string; dataDir: 
     hasAnthropicKey: hasKey(),
     dbPath: ctx.dbPath,
     dataDir: ctx.dataDir,
+    anthropicModel: getSetting('anthropicModel'),
+    models: MODELS,
   }));
 
   ipcMain.handle(CH.keySet, (_e, key: unknown) => {
@@ -48,30 +52,17 @@ export function registerIpc(win: BrowserWindow, ctx: { dbPath: string; dataDir: 
     cancelHarvest();
   });
 
-  ipcMain.handle(CH.searchRun, (_e, req: SearchRequest): SearchResponse => {
+  ipcMain.handle(CH.searchRun, async (_e, req: SearchRequest): Promise<SearchResponse> => {
     if (!req || typeof req.prompt !== 'string') throw new Error('search:run expects a prompt string');
+    return runSearch(req);
+  });
 
-    // M4 adds the Claude parse and rank passes in front of this; the local matcher below
-    // stays as the fallback, and is what `useLlm: false` runs on.
-    const result = resolveQuery(getDb(), req.prompt, {
-      featureTypeFilter: req.featureTypeFilter ?? null,
-      jurisdictionFilter: req.jurisdictionFilter ?? null,
-      limit: req.limit ?? 15,
-    });
-
-    return {
-      candidates: result.candidates,
-      parsed: {
-        placeNames: result.parsed.placeNames,
-        featureTypeHint: result.parsed.featureTypeHint,
-        jurisdictionHint: result.parsed.jurisdictionHint,
-        vintageHint: result.parsed.vintageHint,
-        wants: result.parsed.wants,
-        notes: [result.parsed.notes, ...result.notes].filter(Boolean).join('; '),
-        via: result.parsed.via,
-      },
-      timings: result.timings,
-    };
+  ipcMain.handle(CH.modelSet, (_e, id: unknown) => {
+    if (typeof id !== 'string' || !MODELS.some((m) => m.id === id)) {
+      return { ok: false, error: 'Unknown model' };
+    }
+    setSetting('anthropicModel', id);
+    return { ok: true };
   });
 
   // Lazy fetch on a cache miss, then cached permanently. The renderer shows a loading

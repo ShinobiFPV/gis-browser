@@ -7,6 +7,7 @@ import { HttpClient } from '../harvester/http';
 import { runSource, UnsupportedSourceError } from '../harvester/run-source';
 import { resolve as resolveQuery } from '@resolve/resolve';
 import { getGeometry } from './geometry-service';
+import { runSearch } from './search-service';
 
 /**
  * Headless harvest runner.
@@ -33,10 +34,12 @@ interface Args {
   limit: number | null;
   /** Look a place up and fetch its geometry, exercising the whole M2 path. */
   find: string | null;
+  /** Route --find through the Claude parse and rank passes. */
+  llm: boolean;
 }
 
 function parseArgs(argv: string[]): Args {
-  const out: Args = { ids: [], types: [], names: [], list: false, limit: null, find: null };
+  const out: Args = { ids: [], types: [], names: [], list: false, limit: null, find: null, llm: false };
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
     const next = argv[i + 1];
@@ -57,6 +60,8 @@ function parseArgs(argv: string[]): Args {
       i++;
     } else if (a === '--list') {
       out.list = true;
+    } else if (a === '--llm') {
+      out.llm = true;
     }
   }
   return out;
@@ -78,9 +83,31 @@ function selectSources(db: ReturnType<typeof openDb>, args: Args): SourceRow[] {
  * Exercises the whole M2 path from a terminal: name lookup, lazy geometry fetch, cache
  * write, then a second read that must come from the cache.
  */
-async function runFind(db: ReturnType<typeof openDb>, text: string, limit: number): Promise<number> {
-  const result = resolveQuery(db, text, { limit });
-  const { candidates, parsed } = result;
+async function runFind(
+  db: ReturnType<typeof openDb>,
+  text: string,
+  limit: number,
+  useLlm: boolean,
+): Promise<number> {
+  // With --llm this is the exact path the UI takes, including the fallback to the local
+  // resolver when the key is missing or the API misbehaves.
+  let candidates;
+  let parsed;
+  let timings;
+  let notes: string[];
+
+  if (useLlm) {
+    const r = await runSearch({ prompt: text, useLlm: true, limit });
+    ({ candidates, parsed } = r);
+    timings = r.timings;
+    notes = [];
+  } else {
+    const r = resolveQuery(db, text, { limit });
+    ({ candidates, parsed } = r);
+    timings = r.timings;
+    notes = r.notes;
+  }
+  const result = { candidates, parsed, timings };
 
   console.log(`\n[cli] parsed: names=[${parsed.placeNames.join(' | ')}]`);
   console.log(
@@ -88,7 +115,7 @@ async function runFind(db: ReturnType<typeof openDb>, text: string, limit: numbe
       `vintage=${parsed.vintageHint ?? '—'} (${parsed.via})`,
   );
   console.log(`      ${parsed.notes}`);
-  for (const n of result.notes) console.log(`      note: ${n}`);
+  for (const n of notes) console.log(`      note: ${n}`);
   console.log(
     `      timings: parse ${result.timings.parseMs}ms, match ${result.timings.matchMs}ms, ` +
       `rank ${result.timings.rankMs}ms`,
@@ -149,7 +176,7 @@ async function main(): Promise<number> {
   }
 
   if (args.find) {
-    return runFind(db, args.find, args.limit ?? 5);
+    return runFind(db, args.find, args.limit ?? 5, args.llm);
   }
 
   const sources = selectSources(db, args);
