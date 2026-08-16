@@ -1,5 +1,6 @@
-import { useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import type { HarvestProgress, SourceRow } from '@shared/types';
+import type { BulkDownload } from '@shared/ipc';
 import { FEATURE_TYPE_LABELS, groupOf } from '@shared/taxonomy';
 
 interface Props {
@@ -9,9 +10,27 @@ interface Props {
   busy: boolean;
 }
 
+/** Bytes as something readable at a glance, without pulling in Intl. */
+function mb(bytes: number | null | undefined): string {
+  if (bytes == null) return '?';
+  if (bytes < 1_000_000) return `${Math.round(bytes / 1000)} kB`;
+  if (bytes < 1_000_000_000) return `${(bytes / 1e6).toFixed(bytes < 10_000_000 ? 1 : 0)} MB`;
+  return `${(bytes / 1e9).toFixed(2)} GB`;
+}
+
 export function SourcesPane({ sources, progress, onRefresh, busy }: Props): React.JSX.Element {
   const [filter, setFilter] = useState('');
   const [checked, setChecked] = useState<Set<number>>(new Set());
+  const [downloads, setDownloads] = useState<BulkDownload[]>([]);
+  const [showDownloads, setShowDownloads] = useState(false);
+
+  const refreshDownloads = useCallback(async () => {
+    setDownloads(await window.gis.downloadsList());
+  }, []);
+
+  useEffect(() => {
+    void refreshDownloads();
+  }, [refreshDownloads, busy]);
 
   const shown = useMemo(() => {
     const q = filter.trim().toLowerCase();
@@ -35,6 +54,29 @@ export function SourcesPane({ sources, progress, onRefresh, busy }: Props): Reac
     return [...out.entries()];
   }, [shown]);
 
+  /**
+   * What pressing Harvest will actually cost.
+   *
+   * The brief makes Tier B explicitly user-triggered because it downloads whole files, and
+   * that is only meaningful if the size is on the button before it is pressed. An archive
+   * already on disk is reused, so it is subtracted from the total rather than counted again.
+   */
+  const pending = useMemo(() => {
+    const cached = new Set(downloads.filter((d) => d.present).map((d) => d.sourceId));
+    let bytes = 0;
+    let count = 0;
+    let unknown = 0;
+    for (const s of sources) {
+      if (!checked.has(s.id) || s.tier !== 'B' || cached.has(s.id)) continue;
+      count++;
+      if (s.archive_bytes == null) unknown++;
+      else bytes += s.archive_bytes;
+    }
+    return { bytes, count, unknown };
+  }, [sources, checked, downloads]);
+
+  const cachedBytes = downloads.filter((d) => d.present).reduce((n, d) => n + (d.bytes ?? 0), 0);
+
   function toggle(id: number): void {
     setChecked((prev) => {
       const next = new Set(prev);
@@ -48,6 +90,11 @@ export function SourcesPane({ sources, progress, onRefresh, busy }: Props): Reac
     const res = await window.gis.harvestStart([...checked]);
     if (!res.ok) console.error(res.error);
     await onRefresh();
+  }
+
+  async function removeDownload(sourceId: number): Promise<void> {
+    await window.gis.downloadsRemove(sourceId);
+    await refreshDownloads();
   }
 
   return (
@@ -74,7 +121,7 @@ export function SourcesPane({ sources, progress, onRefresh, busy }: Props): Reac
             </div>
             {rows.map((s) => {
               const p = progress[s.id];
-              const bulkWarning = s.tier === 'B' ? ' · bulk download' : '';
+              const cached = downloads.find((d) => d.sourceId === s.id && d.present);
               return (
                 <div
                   key={s.id}
@@ -88,11 +135,19 @@ export function SourcesPane({ sources, progress, onRefresh, busy }: Props): Reac
                   <div className="meta">
                     <span>{FEATURE_TYPE_LABELS[s.feature_type]}</span>
                     <span>{s.jurisdiction ?? '—'}</span>
-                    <span>{s.verified_count != null ? `${s.verified_count.toLocaleString()} feat` : '? feat'}</span>
+                    <span>{s.verified_count != null ? `${s.verified_count} feat` : '? feat'}</span>
                     <span className={`status ${p?.phase ?? s.status}`}>
-                      {p ? `${p.phase} ${p.fetched}${p.expected ? `/${p.expected}` : ''}` : s.status}
-                      {bulkWarning}
+                      {p
+                        ? p.phase === 'downloading' || p.phase === 'extracting'
+                          ? `${p.phase} ${p.message}`
+                          : `${p.phase} ${p.fetched}${p.expected ? `/${p.expected}` : ''}`
+                        : s.status}
                     </span>
+                    {s.tier === 'B' && (
+                      <span className={cached ? 'bulk cached' : 'bulk'}>
+                        {cached ? `${mb(cached.bytes)} on disk` : `downloads ${mb(s.archive_bytes)}`}
+                      </span>
+                    )}
                   </div>
                 </div>
               );
@@ -102,7 +157,44 @@ export function SourcesPane({ sources, progress, onRefresh, busy }: Props): Reac
         {shown.length === 0 && <div className="empty">No sources match that filter.</div>}
       </div>
 
+      {/* Download manager. Collapsed by default: it only matters once something is cached. */}
+      {downloads.length > 0 && (
+        <div className="downloads">
+          <button className="downloads-toggle" onClick={() => setShowDownloads((v) => !v)}>
+            {showDownloads ? '▾' : '▸'} {downloads.filter((d) => d.present).length} archive
+            {downloads.filter((d) => d.present).length === 1 ? '' : 's'} cached · {mb(cachedBytes)}
+          </button>
+          {showDownloads &&
+            downloads.map((d) => (
+              <div key={d.sourceId} className="download-row">
+                <div className="name">{d.sourceName}</div>
+                <span className="mono">{d.present ? mb(d.bytes) : 'file deleted'}</span>
+                <span className="mono dim" title={`sha256 ${d.sha256 ?? '?'}`}>
+                  {d.sha256 ? d.sha256.slice(0, 8) : '—'}
+                </span>
+                <button className="link-button" onClick={() => void removeDownload(d.sourceId)}>
+                  {d.present ? 'delete' : 'forget'}
+                </button>
+              </div>
+            ))}
+          {showDownloads && (
+            <div className="download-note">
+              Deleting an archive frees disk. The boundaries it indexed stay in the catalog with
+              their geometry — nothing needs re-downloading unless you re-harvest that source.
+            </div>
+          )}
+        </div>
+      )}
+
       <div className="pane-footer">
+        {pending.count > 0 && (
+          <div className="download-warning">
+            {pending.count} bulk source{pending.count === 1 ? '' : 's'} will download{' '}
+            <b>{mb(pending.bytes)}</b>
+            {pending.unknown > 0 && ` plus ${pending.unknown} of unknown size`}, kept on disk and
+            reused.
+          </div>
+        )}
         <button className="primary" disabled={checked.size === 0 || busy} onClick={() => void harvest()}>
           {busy ? 'Harvesting…' : `Harvest ${checked.size || ''}`}
         </button>{' '}

@@ -768,3 +768,73 @@ b.dim {
   color: var(--text-faint);
   font-weight: normal;
 }
+
+/* --- M6 Tier B download manager --- */
+
+.src .meta .bulk {
+  color: var(--tier-b);
+}
+
+.src .meta .bulk.cached {
+  color: var(--ok);
+}
+
+.downloads {
+  border-top: 1px solid var(--border);
+  background: var(--bg-pane);
+  max-height: 30%;
+  overflow-y: auto;
+  flex: none;
+}
+
+.downloads-toggle {
+  display: block;
+  width: 100%;
+  text-align: left;
+  background: none;
+  border: none;
+  color: var(--text-dim);
+  font-size: 11px;
+  padding: 5px 8px;
+  cursor: pointer;
+}
+
+.downloads-toggle:hover {
+  background: var(--bg-raised);
+  color: var(--text);
+}
+
+.download-row {
+  display: grid;
+  grid-template-columns: 1fr auto auto auto;
+  gap: 8px;
+  align-items: center;
+  padding: 3px 8px;
+  font-size: 11px;
+  color: var(--text-dim);
+}
+
+.download-row .name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.download-note {
+  font-size: 10px;
+  color: var(--text-faint);
+  padding: 4px 8px 6px;
+  line-height: 1.4;
+}
+
+/* Stated before the download starts, not after: the brief makes Tier B explicitly
+   user-triggered precisely because these are whole-file downloads. */
+.download-warning {
+  font-size: 11px;
+  line-height: 1.4;
+  color: var(--warn);
+  background: #221a05;
+  border-left: 2px solid var(--warn);
+  padding: 4px 6px;
+  margin-bottom: 6px;
+}

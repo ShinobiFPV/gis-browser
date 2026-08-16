@@ -195,6 +195,25 @@ export function withinCanada(b: Bbox): EnvelopeCheck {
 }
 
 /**
+ * True when a bbox overlaps Canada at all.
+ *
+ * Distinct from withinCanada, which asks whether a bbox is entirely inside the envelope.
+ * Global Tier B datasets -- Natural Earth's countries, lakes and rivers -- are mostly not
+ * about Canada, and the useful test for them is intersection: the Great Lakes and the
+ * United States overlap Canada and are wanted as context, while Lake Victoria and the
+ * Nile do not and are noise in a Canadian boundary catalog.
+ */
+export function intersectsCanada(b: Bbox, slack = 2): boolean {
+  const { minLon, minLat, maxLon, maxLat } = CANADA_BBOX;
+  return !(
+    b.maxx < minLon - slack ||
+    b.minx > maxLon + slack ||
+    b.maxy < minLat - slack ||
+    b.miny > maxLat + slack
+  );
+}
+
+/**
  * True when a bbox looks like it has lat and lon the wrong way round -- the signature of
  * a WFS 2.0 axis flip. Canada's longitudes are all strongly negative and its latitudes
  * all positive, so a swapped bbox is unmistakable.

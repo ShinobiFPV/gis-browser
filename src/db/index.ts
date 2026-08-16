@@ -78,11 +78,11 @@ export function seedSources(db: Db): { inserted: number; updated: number } {
     INSERT INTO sources (
       name, kind, tier, endpoint, layer_id, feature_type, jurisdiction, vintage,
       licence, attribution, name_fields, status, source_srid, verified_count, verified_at, notes,
-      identity_field
+      identity_field, archive_bytes
     ) VALUES (
       @name, @kind, @tier, @endpoint, @layer_id, @feature_type, @jurisdiction, @vintage,
       @licence, @attribution, @name_fields, 'seeded', @source_srid, @verified_count, @verified_at, @notes,
-      @identity_field
+      @identity_field, @archive_bytes
     )
     ON CONFLICT(endpoint, layer_id, feature_type) DO UPDATE SET
       name           = excluded.name,
@@ -97,7 +97,8 @@ export function seedSources(db: Db): { inserted: number; updated: number } {
       verified_count = excluded.verified_count,
       verified_at    = excluded.verified_at,
       notes          = excluded.notes,
-      identity_field = excluded.identity_field
+      identity_field = excluded.identity_field,
+      archive_bytes  = excluded.archive_bytes
       -- status, last_harvested_at and feature_count are deliberately not touched.
   `);
 
@@ -127,6 +128,7 @@ export function seedSources(db: Db): { inserted: number; updated: number } {
         verified_at: s.verifiedAt,
         notes: s.notes ?? null,
         identity_field: s.identityField ?? null,
+        archive_bytes: s.archiveBytes ?? null,
       });
       if (already) updated++;
       else inserted++;

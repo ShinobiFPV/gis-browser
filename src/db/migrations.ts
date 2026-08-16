@@ -175,6 +175,18 @@ const M5_GENERALISATION = `
 ALTER TABLE geometries ADD COLUMN generalisation_deg REAL;
 `;
 
+/**
+ * The download size of a Tier B archive, in bytes, measured during registry verification.
+ *
+ * The brief makes Tier B explicitly user-triggered because these are whole-file downloads,
+ * and that only means something if the user is told the cost before committing: the
+ * dissemination-area archive is 197 MB and expands to well over half a gigabyte. NULL for
+ * every Tier A source, which streams pages and never downloads a file.
+ */
+const M6_ARCHIVE_BYTES = `
+ALTER TABLE sources ADD COLUMN archive_bytes INTEGER;
+`;
+
 export const MIGRATIONS: Migration[] = [
   {
     version: 1,
@@ -200,6 +212,11 @@ export const MIGRATIONS: Migration[] = [
     version: 5,
     name: 'record source-side generalisation on cached geometry',
     up: (db) => db.exec(M5_GENERALISATION),
+  },
+  {
+    version: 6,
+    name: 'record Tier B archive download size',
+    up: (db) => db.exec(M6_ARCHIVE_BYTES),
   },
 ];
 

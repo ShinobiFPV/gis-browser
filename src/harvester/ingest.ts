@@ -4,7 +4,15 @@ import { isJurisdiction } from '@shared/taxonomy';
 import type { SourceRow } from '@shared/types';
 import { buildAliases, kindForField, type NameFieldValue } from './normalize/aliases';
 import { refineFeatureType } from './normalize/feature-type';
-import { unionBbox, withinCanada, type Bbox } from './normalize/crs';
+import {
+  countVertices,
+  intersectsCanada,
+  unionBbox,
+  withinCanada,
+  type Bbox,
+  type Geometry,
+} from './normalize/crs';
+import { mergeGeometries } from './geometry';
 import type { IndexedRow } from './catalogs/esri-rest';
 
 /** StatCan province/territory identifiers, used to derive per-row jurisdiction. */
@@ -80,10 +88,71 @@ export interface IngestStats {
   featuresMerged: number;
   aliasesWritten: number;
   bboxRejected: number;
+  /** Tier B only: geometries cached at index time rather than fetched lazily. */
+  geometriesWritten: number;
+  /** Rows with no value in any declared name field, skipped rather than indexed. */
+  skippedNameless: number;
+}
+
+export interface IngestOptions {
+  /**
+   * What to do with a row that has no name.
+   *
+   * Tier A services publish boundaries, and a nameless row there means the registry's
+   * name_fields are wrong -- worth failing the whole harvest over, because the alternative
+   * is an index that silently omits ridings.
+   *
+   * Tier B world datasets are different. Natural Earth's 1,300 lakes include plenty of
+   * genuinely unnamed ones; that is the data being accurate, not broken. They are skipped
+   * and counted, since a nameless feature cannot be searched for by name and indexing it
+   * would add a row nobody can ever reach. The caller checks the count: if EVERY row was
+   * nameless, the name_fields really are wrong and that does fail.
+   */
+  namelessRows?: 'throw' | 'skip';
+
+  /**
+   * How strictly a feature's bbox must sit inside Canada.
+   *
+   * 'within' is right for Tier A: those services publish Canadian boundaries, so a bbox
+   * outside the envelope means an unhandled CRS or a WFS axis flip, and nulling it keeps
+   * the R-tree clean.
+   *
+   * 'intersects' is right for Tier B global archives. The United States in Natural Earth's
+   * countries layer reaches Hawaii and American Samoa; it is a legitimate context feature
+   * that borders Canada, and demanding containment would null its bbox and make it
+   * invisible to every spatial query. Tier B gets a stronger CRS check anyway -- if the
+   * whole layer reprojects outside Canada, run-bulk fails the harvest outright.
+   */
+  bboxPolicy?: 'within' | 'intersects';
 }
 
 export function emptyStats(): IngestStats {
-  return { rowsSeen: 0, featuresWritten: 0, featuresMerged: 0, aliasesWritten: 0, bboxRejected: 0 };
+  return {
+    rowsSeen: 0,
+    featuresWritten: 0,
+    featuresMerged: 0,
+    aliasesWritten: 0,
+    bboxRejected: 0,
+    geometriesWritten: 0,
+    skippedNameless: 0,
+  };
+}
+
+/**
+ * A row that arrived with its geometry.
+ *
+ * Tier A indexes attributes and fetches geometry lazily on export, because a FeatureServer
+ * can be asked for one boundary at a time. Tier B has no such option -- the geometry is
+ * already in the file we downloaded -- so it is cached at index time and those features
+ * are exportable offline from the moment the harvest finishes.
+ */
+export interface RowWithGeometry extends IndexedRow {
+  geometry: unknown;
+  vertexCount: number;
+}
+
+function hasGeometry(row: IndexedRow): row is RowWithGeometry {
+  return 'geometry' in row && (row as RowWithGeometry).geometry != null;
 }
 
 export interface Ingestor {
@@ -102,9 +171,11 @@ export interface Ingestor {
  * them into one feature whose bbox is the union of its parts, which is what an artist
  * asking for "Nunavut" actually wants.
  */
-export function createIngestor(db: Db, source: SourceRow): Ingestor {
+export function createIngestor(db: Db, source: SourceRow, options: IngestOptions = {}): Ingestor {
   const nameFields: string[] = source.name_fields ? (JSON.parse(source.name_fields) as string[]) : [];
   const identityField = source.identity_field;
+  const namelessRows = options.namelessRows ?? 'throw';
+  const bboxPolicy = options.bboxPolicy ?? 'within';
   const stats = emptyStats();
 
   const selectExisting = db.prepare(
@@ -132,6 +203,21 @@ export function createIngestor(db: Db, source: SourceRow): Ingestor {
   const upsertRtree = db.prepare(
     'INSERT OR REPLACE INTO features_rtree (id, minx, maxx, miny, maxy) VALUES (?, ?, ?, ?, ?)',
   );
+  const upsertGeometry = db.prepare(`
+    INSERT INTO geometries
+      (feature_id, geometry_json, vertex_count, source_srid, content_hash, cached_at, generalisation_deg)
+    VALUES
+      (@feature_id, @geometry_json, @vertex_count, @source_srid, @content_hash, @cached_at, @generalisation_deg)
+    ON CONFLICT(feature_id) DO UPDATE SET
+      geometry_json      = excluded.geometry_json,
+      vertex_count       = excluded.vertex_count,
+      source_srid        = excluded.source_srid,
+      content_hash       = excluded.content_hash,
+      cached_at          = excluded.cached_at,
+      generalisation_deg = excluded.generalisation_deg
+  `);
+
+  const selectGeometry = db.prepare('SELECT geometry_json FROM geometries WHERE feature_id = ?');
   const deleteAliases = db.prepare('DELETE FROM aliases WHERE feature_id = ?');
   const insertAlias = db.prepare(
     'INSERT INTO aliases (feature_id, alias, alias_kind) VALUES (?, ?, ?) ON CONFLICT(feature_id, alias) DO NOTHING',
@@ -152,6 +238,10 @@ export function createIngestor(db: Db, source: SourceRow): Ingestor {
 
     const officialName = pickOfficialName(attrs, nameFields);
     if (!officialName) {
+      if (namelessRows === 'skip') {
+        stats.skippedNameless++;
+        return;
+      }
       throw new Error(
         `Row ${key} of "${source.name}" has no value in any declared name field [${nameFields.join(', ')}]. ` +
           `A nameless feature cannot be searched for.`,
@@ -161,10 +251,14 @@ export function createIngestor(db: Db, source: SourceRow): Ingestor {
     // Reject nonsense geometry rather than poisoning the R-tree with it.
     let bbox: Bbox | null = row.bbox;
     if (bbox) {
-      const check = withinCanada(bbox);
-      if (!check.ok) {
+      const ok = bboxPolicy === 'intersects' ? intersectsCanada(bbox) : withinCanada(bbox).ok;
+      if (!ok) {
         stats.bboxRejected++;
-        console.warn(`[ingest] ${source.name} ${key}: bbox rejected -- ${check.reason}`);
+        const reason =
+          bboxPolicy === 'intersects'
+            ? `does not overlap Canada at all`
+            : withinCanada(bbox).reason;
+        console.warn(`[ingest] ${source.name} ${key}: bbox rejected -- ${reason ?? 'outside Canada'}`);
         bbox = null;
       }
     }
@@ -213,6 +307,42 @@ export function createIngestor(db: Db, source: SourceRow): Ingestor {
     for (const a of buildAliases(officialName, collectNameValues(attrs, nameFields))) {
       const info = insertAlias.run(rowId, a.alias, a.kind);
       stats.aliasesWritten += info.changes;
+    }
+
+    // Tier B geometry, cached the moment it is read.
+    //
+    // When identity_field merges several rows into one feature, each row carries only its
+    // own polygon. Writing them in turn would leave the feature holding whichever part
+    // happened to come last -- an island instead of a riding. So a second part for a key
+    // is merged with what is already stored, read back from the row rather than held in
+    // memory: a national dissemination-area file has half a million records and buffering
+    // their geometry to merge a handful of multipart ones would be absurd.
+    if (hasGeometry(row)) {
+      let geometry = row.geometry;
+      let vertexCount = row.vertexCount;
+
+      if (existing && identityField) {
+        const prior = selectGeometry.get(rowId) as { geometry_json: string } | undefined;
+        if (prior) {
+          const merged = mergeGeometries([
+            JSON.parse(prior.geometry_json) as Geometry,
+            geometry as Geometry,
+          ]);
+          geometry = merged;
+          vertexCount = countVertices(merged);
+        }
+      }
+
+      upsertGeometry.run({
+        feature_id: rowId,
+        geometry_json: JSON.stringify(geometry),
+        vertex_count: vertexCount,
+        source_srid: 4326,
+        content_hash: null,
+        cached_at: new Date().toISOString(),
+        generalisation_deg: null,
+      });
+      stats.geometriesWritten++;
     }
   };
 

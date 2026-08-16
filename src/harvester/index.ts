@@ -1,3 +1,4 @@
+import { dirname } from 'node:path';
 import { openDb } from '@db/index';
 import { getSource, recordHarvestResult, setSourceStatus } from '@db/queries';
 import type { HarvestProgress } from '@shared/types';
@@ -81,8 +82,12 @@ async function run(dbPath: string, sourceIds: number[]): Promise<void> {
             progress({ sourceId: id, sourceName: source.name, phase, fetched, expected, message }),
           log,
         },
-        { resume: true },
+        // Tier B archives are downloaded beside the catalog, so a reinstall keeps them
+        // and a 188 MB file is fetched once per machine rather than once per harvest.
+        { resume: true, dataDir: dirname(dbPath) },
       );
+
+      for (const w of result.warnings ?? []) log('warn', w);
 
       if (cancelled) {
         setSourceStatus(db, id, 'stale');

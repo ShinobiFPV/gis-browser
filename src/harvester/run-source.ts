@@ -4,6 +4,7 @@ import { type HttpClient } from './http';
 import * as esri from './catalogs/esri-rest';
 import * as wfs from './catalogs/ogc-wfs';
 import { createIngestor, type IngestStats } from './ingest';
+import { runBulk } from './bulk/run-bulk';
 
 /**
  * Harvest one source, index-only.
@@ -17,6 +18,8 @@ export interface RunResult {
   stats: IngestStats;
   serviceCount: number;
   rowsFetched: number;
+  /** Non-fatal facts the operator should see: CRS disagreements, reissued datasets. */
+  warnings?: string[];
 }
 
 /**
@@ -32,7 +35,12 @@ export class UnsupportedSourceError extends Error {
 }
 
 export interface RunCallbacks {
-  onPhase: (phase: 'counting' | 'paging' | 'reconciling', fetched: number, expected: number | null, message: string) => void;
+  onPhase: (
+    phase: 'counting' | 'paging' | 'reconciling' | 'downloading' | 'extracting',
+    fetched: number,
+    expected: number | null,
+    message: string,
+  ) => void;
   log: (level: 'debug' | 'info' | 'warn' | 'error', message: string) => void;
 }
 
@@ -64,21 +72,72 @@ export async function runSource(
   http: HttpClient,
   source: SourceRow,
   cb: RunCallbacks,
-  opts: { resume?: boolean } = {},
+  opts: { resume?: boolean; dataDir?: string } = {},
 ): Promise<RunResult> {
   switch (source.kind) {
     case 'esri-rest':
       return runEsri(db, http, source, cb, opts);
     case 'wfs':
       return runWfs(db, http, source, cb, opts);
-    case 'bulk-file':
-      throw new UnsupportedSourceError(`"${source.name}" is Tier B; bulk ingest arrives in M6.`);
+    case 'bulk-file': {
+      if (!opts.dataDir) {
+        throw new Error(
+          `"${source.name}" is a Tier B bulk source and needs a dataDir to download into. ` +
+            `The caller did not supply one.`,
+        );
+      }
+      return runBulkSource(db, http, source, opts.dataDir, cb);
+    }
     case 'arcgis-hub':
     case 'ckan':
       throw new UnsupportedSourceError(`"${source.name}" is a discovery catalog; crawlers arrive in M7.`);
     default:
       throw new Error(`Unsupported source kind "${String(source.kind)}" for "${source.name}"`);
   }
+}
+
+/**
+ * Tier B adapter.
+ *
+ * Maps the bulk pipeline's phases onto the same callback shape the Tier A paths use, so
+ * the UI has one progress model rather than two. `serviceCount` is the row count the file
+ * actually contained: for a bulk archive the file IS the authority, so unlike Tier A there
+ * is nothing independent to reconcile against and the count cannot mismatch itself.
+ */
+async function runBulkSource(
+  db: Db,
+  http: HttpClient,
+  source: SourceRow,
+  dataDir: string,
+  cb: RunCallbacks,
+): Promise<RunResult> {
+  const result = await runBulk(db, http, source, dataDir, {
+    log: cb.log,
+    onPhase: (p) => {
+      const phase =
+        p.phase === 'downloading'
+          ? 'downloading'
+          : p.phase === 'extracting'
+            ? 'extracting'
+            : p.phase === 'reading'
+              ? 'paging'
+              : 'reconciling';
+      cb.onPhase(phase, p.done, p.total, p.message);
+    },
+  });
+
+  cb.log(
+    'info',
+    `${source.name}: indexed ${result.rowsRead} features from "${result.layer}" ` +
+      `(${result.crsDescription}), ${result.stats.geometriesWritten} geometries cached`,
+  );
+
+  return {
+    stats: result.stats,
+    serviceCount: result.rowsRead,
+    rowsFetched: result.rowsRead,
+    warnings: result.warnings,
+  };
 }
 
 async function runEsri(

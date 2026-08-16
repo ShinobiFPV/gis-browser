@@ -450,11 +450,17 @@ const BULK: SeedSource[] = [
     licence: OGL_CANADA,
     attribution: 'Elections Canada',
     nameFields: ['ED_NAMEE', 'ED_NAMEF', 'FED_NUM'],
-    sourceSrid: 3978,
+    // Corrected in M6 from 3978 after reading the archive's own .prj: False_Easting
+    // 6200000, Central_Meridian -91.8667, Latitude_Of_Origin 63.390675 -- Statistics
+    // Canada Lambert, numerically identical to EPSG:3347 to within 1e-14 degrees.
+    // Reading it as 3978 puts Canada in the Atlantic off Portugal. The .prj is
+    // authoritative at ingest regardless; this stops the registry disagreeing with it.
+    sourceSrid: 3347,
     verifiedCount: 343,
     verifiedAt: VERIFIED_AT,
+    archiveBytes: 9_388_965,
     notes:
-      '9 MB. Deliberate redundancy for the layer that matters most on election night: the ESRI ' +
+      '9.4 MB. Deliberate redundancy for the layer that matters most on election night: the ESRI ' +
       'REST endpoint for these boundaries lives on maps-cartes.services.geo.ca, which was ' +
       'returning 403 host-wide on 2026-08-16. This file is the same Elections Canada data on ' +
       'ftp.maps.canada.ca, a different host that stayed up. Every other vintage (2003, 2013, ' +
@@ -473,8 +479,10 @@ const BULK: SeedSource[] = [
     sourceSrid: null,
     verifiedCount: null,
     verifiedAt: VERIFIED_AT,
+    archiveBytes: 57_234_634,
     notes:
-      'Offline fallback for the Tier A CLSS service. Note AL_TA_CA_SHP_DCM_eng.zip in the same ' +
+      '57.2 MB, expanding to 86 MB. Offline fallback for the Tier A CLSS service, and it agrees ' +
+      'with it exactly: both index 3,372 features. Note AL_TA_CA_SHP_DCM_eng.zip in the same ' +
       'directory is a change-management delta, NOT the full dataset -- do not seed that one.',
   }),
   bulk({
@@ -490,7 +498,11 @@ const BULK: SeedSource[] = [
     sourceSrid: 3347,
     verifiedCount: 57932,
     verifiedAt: VERIFIED_AT,
-    notes: '188 MB. Only worth downloading if working offline -- the Tier A service covers the same data.',
+    archiveBytes: 197_042_003,
+    notes:
+      '197 MB, expanding to roughly 600 MB. Only worth downloading to work offline -- the Tier A ' +
+      'service covers the same data. Its host answers HEAD with an infinite redirect chain; the ' +
+      'downloader never issues one.',
   }),
   bulk({
     name: 'StatCan Census Subdivisions — 2021 (cartographic)',
@@ -505,7 +517,10 @@ const BULK: SeedSource[] = [
     sourceSrid: 3347,
     verifiedCount: 5161,
     verifiedAt: VERIFIED_AT,
-    notes: '149 MB.',
+    archiveBytes: 155_981_521,
+    notes:
+      '156 MB, expanding to 315 MB. Ships no .cpg, so the attribute encoding is undeclared; ' +
+      'reading it as UTF-8 is correct, verified against accented names (Québec, Trois-Rivières).',
   }),
   bulk({
     name: 'Natural Earth 10m — Admin 0 Countries',
@@ -520,7 +535,10 @@ const BULK: SeedSource[] = [
     sourceSrid: 4326,
     verifiedCount: null,
     verifiedAt: VERIFIED_AT,
-    notes: '4.7 MB. Context layer for neighbouring countries behind a Canadian boundary.',
+    archiveBytes: 4_930_492,
+    notes:
+      '4.9 MB. Context layer for neighbouring countries behind a Canadian boundary. A world ' +
+      'dataset: ingest keeps only the 7 countries whose extent overlaps Canada.',
   }),
   bulk({
     name: 'Natural Earth 10m — Lakes',
@@ -535,7 +553,10 @@ const BULK: SeedSource[] = [
     sourceSrid: 4326,
     verifiedCount: null,
     verifiedAt: VERIFIED_AT,
-    notes: '2.2 MB. Filter to the Great Lakes at ingest.',
+    archiveBytes: 2_349_685,
+    notes:
+      '2.3 MB. A world dataset: ingest keeps the 451 lakes overlapping Canada, of which 184 ' +
+      'carry a name and are therefore searchable.',
   }),
   bulk({
     name: 'Natural Earth 10m — Rivers and Lake Centerlines',
@@ -550,7 +571,8 @@ const BULK: SeedSource[] = [
     sourceSrid: 4326,
     verifiedCount: null,
     verifiedAt: VERIFIED_AT,
-    notes: '2.0 MB.',
+    archiveBytes: 2_079_507,
+    notes: '2.1 MB. A world dataset: ingest keeps the 230 rivers overlapping Canada.',
   }),
 ];
 

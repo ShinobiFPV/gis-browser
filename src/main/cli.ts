@@ -1,4 +1,4 @@
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
 import { app } from 'electron';
 import { closeDb, openDb } from '@db/index';
 import { recordHarvestResult, setSourceStatus } from '@db/queries';
@@ -323,8 +323,10 @@ async function main(): Promise<number> {
           },
           log: (level, message) => console.log(`    [${level}] ${message}`),
         },
-        { resume: false },
+        { resume: false, dataDir: dirname(dbPath) },
       );
+
+      for (const w of result.warnings ?? []) console.log(`    WARNING: ${w}`);
 
       const s = result.stats;
       recordHarvestResult(db, source.id, { featureCount: s.featuresWritten, status: 'ok' });

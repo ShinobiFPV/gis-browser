@@ -13,6 +13,8 @@ export const CH = {
   modelSet: 'model:set',
   sourcesList: 'sources:list',
   sourcesSetStatus: 'sources:setStatus',
+  downloadsList: 'downloads:list',
+  downloadsRemove: 'downloads:remove',
   harvestStart: 'harvest:start',
   harvestCancel: 'harvest:cancel',
   searchRun: 'search:run',
@@ -70,6 +72,19 @@ export interface GeometryResult {
    * this is a provenance fact about what we were able to retrieve.
    */
   generalisationDeg: number | null;
+}
+
+/** A Tier B archive sitting on disk. */
+export interface BulkDownload {
+  sourceId: number;
+  sourceName: string;
+  url: string;
+  localPath: string;
+  bytes: number | null;
+  sha256: string | null;
+  downloadedAt: string;
+  /** False when the row is in the catalog but the file has since been deleted. */
+  present: boolean;
 }
 
 export type ExportFormat = 'geojson' | 'svg';
@@ -133,6 +148,8 @@ export interface GisBridge {
   modelSet(id: string): Promise<{ ok: boolean; error?: string }>;
   sourcesList(): Promise<SourceRow[]>;
   sourcesSetStatus(id: number, status: SourceRow['status']): Promise<void>;
+  downloadsList(): Promise<BulkDownload[]>;
+  downloadsRemove(sourceId: number): Promise<{ ok: boolean; freedBytes: number }>;
   harvestStart(sourceIds: number[]): Promise<{ ok: boolean; error?: string }>;
   harvestCancel(): Promise<void>;
   searchRun(req: SearchRequest): Promise<SearchResponse>;

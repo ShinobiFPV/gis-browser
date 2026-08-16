@@ -47,6 +47,13 @@ export interface SourceRow {
    */
   identity_field: string | null;
 
+  /**
+   * Tier B only: download size in bytes, measured at verification. NULL for Tier A, which
+   * pages a service rather than downloading a file. Shown before the download starts so
+   * "explicit user-triggered" means an informed trigger.
+   */
+  archive_bytes: number | null;
+
   /** Computed by listSources(): rows actually indexed so far. */
   indexed_count?: number;
 }
@@ -72,6 +79,8 @@ export interface SeedSource {
   verifiedAt: string | null;
   /** Set on multipart layers so ingest merges polygons belonging to one feature. */
   identityField?: string;
+  /** Tier B only: measured download size in bytes, so the UI can state the cost. */
+  archiveBytes?: number;
   notes?: string;
 }
 
@@ -134,7 +143,16 @@ export interface Candidate {
 export interface HarvestProgress {
   sourceId: number;
   sourceName: string;
-  phase: 'starting' | 'counting' | 'paging' | 'reconciling' | 'done' | 'failed';
+  /** 'downloading' and 'extracting' are Tier B only; 'paging' covers reading its records. */
+  phase:
+    | 'starting'
+    | 'counting'
+    | 'downloading'
+    | 'extracting'
+    | 'paging'
+    | 'reconciling'
+    | 'done'
+    | 'failed';
   fetched: number;
   expected: number | null;
   message: string;

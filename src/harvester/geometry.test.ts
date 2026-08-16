@@ -26,6 +26,7 @@ function source(over: Partial<SourceRow> = {}): SourceRow {
     verified_at: '2026-08-16',
     notes: null,
     identity_field: null,
+    archive_bytes: null,
     ...over,
   };
 }

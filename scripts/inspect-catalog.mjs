@@ -48,16 +48,30 @@ console.log('\n=== invariants ===');
 const fts = one('SELECT COUNT(*) FROM features_fts');
 const rtree = one('SELECT COUNT(*) FROM features_rtree');
 const withBbox = one('SELECT COUNT(*) FROM features WHERE minx IS NOT NULL');
-const outside = one(
-  'SELECT COUNT(*) FROM features WHERE minx IS NOT NULL AND (minx < -143.5 OR maxx > -50 OR miny < 39 OR maxy > 86)',
+/**
+ * Containment was the right test until M6 brought in Natural Earth's world layers. The
+ * United States and Greenland are legitimate context features that overlap Canada and
+ * extend well past it, so the invariant is now that every bbox must INTERSECT Canada --
+ * which still catches the failure that mattered, a layer landing in the wrong hemisphere.
+ */
+const disjoint = one(
+  'SELECT COUNT(*) FROM features WHERE minx IS NOT NULL AND (maxx < -143.5 OR minx > -50 OR maxy < 39 OR miny > 86)',
 );
+
+/**
+ * A bbox wider than Canada is not wrong by itself, but one spanning most of the planet
+ * matches every spatial query and makes the R-tree useless. dropDistantParts exists to
+ * prevent exactly this.
+ */
+const global = one('SELECT COUNT(*) FROM features WHERE minx IS NOT NULL AND (maxx - minx) > 200');
 const orphanRtree = one('SELECT COUNT(*) FROM features_rtree WHERE id NOT IN (SELECT id FROM features)');
 
 const check = (label, ok, detail) => console.log(`  ${ok ? 'ok  ' : 'FAIL'}  ${label.padEnd(42)} ${detail}`);
 check('FTS index matches alias count', fts === counts.aliases, `${fts} vs ${counts.aliases}`);
 check('R-tree matches features with a bbox', rtree === withBbox, `${rtree} vs ${withBbox}`);
 check('no orphaned R-tree entries', orphanRtree === 0, `${orphanRtree} orphans`);
-check('no geometry outside Canada', outside === 0, `${outside} outside`);
+check('every bbox overlaps Canada', disjoint === 0, `${disjoint} disjoint`);
+check('no bbox spans the globe', global === 0, `${global} wider than 200 deg`);
 
 const extent = db.prepare('SELECT MIN(minx) a, MAX(maxx) b, MIN(miny) c, MAX(maxy) d FROM features').get();
 if (extent.a !== null) {

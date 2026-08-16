@@ -1,6 +1,8 @@
+import { existsSync, rmSync, statSync } from 'node:fs';
 import { dialog, ipcMain, shell, type BrowserWindow } from 'electron';
 import {
   CH,
+  type BulkDownload,
   type ExportRequest,
   type ExportResult,
   type SearchRequest,
@@ -47,6 +49,65 @@ export function registerIpc(win: BrowserWindow, ctx: { dbPath: string; dataDir: 
   ipcMain.handle(CH.sourcesSetStatus, (_e, id: unknown, status: unknown) => {
     if (typeof id !== 'number') throw new Error('sources:setStatus expects a numeric id');
     setSourceStatus(getDb(), id, status as SourceRow['status']);
+  });
+
+  /**
+   * The download manager's view: which Tier B archives are on disk.
+   *
+   * `present` is checked against the filesystem rather than trusted from the row, because
+   * these are large files in a user-visible folder and someone clearing space will delete
+   * them without telling the app.
+   */
+  ipcMain.handle(CH.downloadsList, (): BulkDownload[] => {
+    const rows = getDb()
+      .prepare(
+        `SELECT d.source_id, d.url, d.local_path, d.bytes, d.sha256, d.downloaded_at, s.name
+         FROM bulk_downloads d JOIN sources s ON s.id = d.source_id
+         ORDER BY d.downloaded_at DESC`,
+      )
+      .all() as {
+      source_id: number;
+      url: string;
+      local_path: string;
+      bytes: number | null;
+      sha256: string | null;
+      downloaded_at: string;
+      name: string;
+    }[];
+
+    return rows.map((r) => ({
+      sourceId: r.source_id,
+      sourceName: r.name,
+      url: r.url,
+      localPath: r.local_path,
+      bytes: r.bytes,
+      sha256: r.sha256,
+      downloadedAt: r.downloaded_at,
+      present: existsSync(r.local_path),
+    }));
+  });
+
+  /**
+   * Deletes a cached archive to reclaim disk. The indexed features and their geometry stay
+   * -- they are already in the catalog and do not need the archive again. Re-harvesting
+   * that source later downloads it afresh.
+   */
+  ipcMain.handle(CH.downloadsRemove, (_e, sourceId: unknown) => {
+    if (typeof sourceId !== 'number') throw new Error('downloads:remove expects a numeric source id');
+    const db = getDb();
+    const row = db
+      .prepare('SELECT local_path, bytes FROM bulk_downloads WHERE source_id = ?')
+      .get(sourceId) as { local_path: string; bytes: number | null } | undefined;
+    if (!row) return { ok: false, freedBytes: 0 };
+
+    let freedBytes = 0;
+    if (existsSync(row.local_path)) {
+      freedBytes = statSync(row.local_path).size;
+      rmSync(row.local_path, { force: true });
+    }
+    db.prepare('DELETE FROM bulk_downloads WHERE source_id = ?').run(sourceId);
+    console.log(`[downloads] removed ${row.local_path}, freed ${freedBytes} bytes`);
+    return { ok: true, freedBytes };
   });
 
   ipcMain.handle(CH.harvestStart, (_e, sourceIds: unknown) => {
