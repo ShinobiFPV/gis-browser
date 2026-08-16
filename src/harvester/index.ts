@@ -3,7 +3,7 @@ import { getSource, recordHarvestResult, setSourceStatus } from '@db/queries';
 import type { HarvestProgress } from '@shared/types';
 import type { FromHarvester, ToHarvester } from '../main/harvester-host';
 import { HttpClient } from './http';
-import { runSource } from './run-source';
+import { runSource, UnsupportedSourceError } from './run-source';
 
 /**
  * Harvester utilityProcess entry point.
@@ -119,6 +119,23 @@ async function run(dbPath: string, sourceIds: number[]): Promise<void> {
       });
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
+
+      // Not-yet-implemented is not a failure: leave the source seeded so the UI does not
+      // show a red row for a source that is perfectly fine.
+      if (err instanceof UnsupportedSourceError) {
+        setSourceStatus(db, id, 'seeded');
+        log('info', `${source.name}: skipped -- ${message}`);
+        progress({
+          sourceId: id,
+          sourceName: source.name,
+          phase: 'done',
+          fetched: 0,
+          expected: source.verified_count,
+          message: 'not supported yet',
+        });
+        continue;
+      }
+
       setSourceStatus(db, id, 'failed');
       progress({
         sourceId: id,

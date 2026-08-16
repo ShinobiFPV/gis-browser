@@ -19,6 +19,18 @@ export interface RunResult {
   rowsFetched: number;
 }
 
+/**
+ * Raised for a source this milestone cannot harvest yet -- Tier B bulk files (M6) and
+ * discovery catalogs (M7). Distinct from a real failure so the UI does not paint a
+ * perfectly good source red for not being implemented.
+ */
+export class UnsupportedSourceError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'UnsupportedSourceError';
+  }
+}
+
 export interface RunCallbacks {
   onPhase: (phase: 'counting' | 'paging' | 'reconciling', fetched: number, expected: number | null, message: string) => void;
   log: (level: 'debug' | 'info' | 'warn' | 'error', message: string) => void;
@@ -60,10 +72,10 @@ export async function runSource(
     case 'wfs':
       return runWfs(db, http, source, cb, opts);
     case 'bulk-file':
-      throw new Error(`Source "${source.name}" is Tier B; bulk ingest arrives in M6.`);
+      throw new UnsupportedSourceError(`"${source.name}" is Tier B; bulk ingest arrives in M6.`);
     case 'arcgis-hub':
     case 'ckan':
-      throw new Error(`Source "${source.name}" is a discovery catalog; crawlers arrive in M7.`);
+      throw new UnsupportedSourceError(`"${source.name}" is a discovery catalog; crawlers arrive in M7.`);
     default:
       throw new Error(`Unsupported source kind "${String(source.kind)}" for "${source.name}"`);
   }

@@ -4,7 +4,7 @@ import { closeDb, openDb } from '@db/index';
 import { recordHarvestResult, setSourceStatus } from '@db/queries';
 import type { SourceRow } from '@shared/types';
 import { HttpClient } from '../harvester/http';
-import { runSource } from '../harvester/run-source';
+import { runSource, UnsupportedSourceError } from '../harvester/run-source';
 
 /**
  * Headless harvest runner.
@@ -126,9 +126,15 @@ async function main(): Promise<number> {
           `${((Date.now() - started) / 1000).toFixed(1)}s`,
       );
     } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      if (err instanceof UnsupportedSourceError) {
+        setSourceStatus(db, source.id, 'seeded');
+        console.log(`    SKIPPED: ${message}`);
+        continue;
+      }
       failures++;
       setSourceStatus(db, source.id, 'failed');
-      console.error(`    FAILED: ${err instanceof Error ? err.message : String(err)}`);
+      console.error(`    FAILED: ${message}`);
     }
   }
 
