@@ -1,0 +1,29 @@
+appId: ca.shintech.gisbrowser
+productName: GIS Browser
+copyright: © ShinTech Electronics
+
+directories:
+  output: release
+  buildResources: build
+
+files:
+  - out/**
+  - package.json
+  - '!**/*.map'
+
+# better-sqlite3 is the only native module; it is unpacked so its .node binary is
+# loadable from inside the asar.
+asarUnpack:
+  - '**/node_modules/better-sqlite3/**'
+
+win:
+  target:
+    - target: nsis
+      arch: [x64]
+  artifactName: ${productName}-${version}-setup.${ext}
+
+nsis:
+  oneClick: false
+  perMachine: false
+  allowToChangeInstallationDirectory: true
+  shortcutName: GIS Browser

@@ -1,0 +1,19 @@
+node_modules/
+out/
+dist/
+release/
+*.log
+npm-debug.log*
+.DS_Store
+Thumbs.db
+.vite/
+.eslintcache
+coverage/
+
+# Local data: the harvested catalog, geometry cache and downloaded bulk files.
+# These are rebuildable from the source registry and can reach hundreds of MB.
+data/
+*.sqlite
+*.sqlite-journal
+*.sqlite-wal
+*.sqlite-shm
