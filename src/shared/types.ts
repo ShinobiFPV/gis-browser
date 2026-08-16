@@ -123,6 +123,10 @@ export interface Candidate {
   /** 0..1 from the local matcher. The LLM ranker adds its own score alongside. */
   matchScore: number;
   matchedAlias: string | null;
+  /** Which pass found it, so a fuzzy rescue is distinguishable from an exact hit. */
+  matchedVia?: 'fts-all' | 'fts-any' | 'fuzzy';
+  /** One line explaining the ranking, shown in the UI. */
+  justification?: string;
 }
 
 export interface HarvestProgress {

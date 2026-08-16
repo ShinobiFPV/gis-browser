@@ -5,7 +5,7 @@ import { recordHarvestResult, setSourceStatus } from '@db/queries';
 import type { SourceRow } from '@shared/types';
 import { HttpClient } from '../harvester/http';
 import { runSource, UnsupportedSourceError } from '../harvester/run-source';
-import { quickFind } from '@resolve/quick-find';
+import { resolve as resolveQuery } from '@resolve/resolve';
 import { getGeometry } from './geometry-service';
 
 /**
@@ -79,18 +79,34 @@ function selectSources(db: ReturnType<typeof openDb>, args: Args): SourceRow[] {
  * write, then a second read that must come from the cache.
  */
 async function runFind(db: ReturnType<typeof openDb>, text: string, limit: number): Promise<number> {
-  const candidates = quickFind(db, text, { limit });
+  const result = resolveQuery(db, text, { limit });
+  const { candidates, parsed } = result;
+
+  console.log(`\n[cli] parsed: names=[${parsed.placeNames.join(' | ')}]`);
+  console.log(
+    `      type=${parsed.featureTypeHint ?? '—'} jurisdiction=${parsed.jurisdictionHint ?? '—'} ` +
+      `vintage=${parsed.vintageHint ?? '—'} (${parsed.via})`,
+  );
+  console.log(`      ${parsed.notes}`);
+  for (const n of result.notes) console.log(`      note: ${n}`);
+  console.log(
+    `      timings: parse ${result.timings.parseMs}ms, match ${result.timings.matchMs}ms, ` +
+      `rank ${result.timings.rankMs}ms`,
+  );
+
   if (candidates.length === 0) {
     console.log(`[cli] no candidates for "${text}"`);
     return 1;
   }
 
-  console.log(`\n[cli] ${candidates.length} candidate(s) for "${text}":`);
-  for (const c of candidates) {
+  console.log(`\n[cli] ${candidates.length} candidate(s):`);
+  for (const [i, c] of candidates.entries()) {
     console.log(
-      `  ${c.matchScore.toFixed(2)}  ${c.officialName}  [${c.featureType}/${c.jurisdiction ?? '—'}]` +
-        `  cached=${c.hasCachedGeometry}\n         via "${c.matchedAlias}"  <- ${c.sourceName}`,
+      `  ${i + 1}. ${c.matchScore.toFixed(3)}  ${c.officialName}  [${c.featureType}/${c.jurisdiction ?? '—'}]` +
+        `  cached=${c.hasCachedGeometry}`,
     );
+    console.log(`         via ${c.matchedVia} on "${c.matchedAlias}"  <- ${c.sourceName}`);
+    console.log(`         ${c.justification ?? ''}`);
   }
 
   const top = candidates[0]!;

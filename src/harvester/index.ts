@@ -4,6 +4,7 @@ import type { HarvestProgress } from '@shared/types';
 import type { FromHarvester, ToHarvester } from '../main/harvester-host';
 import { HttpClient } from './http';
 import { runSource, UnsupportedSourceError } from './run-source';
+import { applyManualAliases } from '@resolve/manual-aliases';
 
 /**
  * Harvester utilityProcess entry point.
@@ -148,6 +149,14 @@ async function run(dbPath: string, sourceIds: number[]): Promise<void> {
       });
       log('error', `${source.name}: ${message}`);
     }
+  }
+
+  // Ingest rebuilds each feature's aliases, which drops the curated ones. Re-apply them
+  // here so a search straight after a harvest still finds Wasauksing.
+  const manual = applyManualAliases(db);
+  if (manual.inserted > 0) log('info', `re-applied ${manual.inserted} manual alias row(s)`);
+  for (const u of manual.unmatched) {
+    log('warn', `manual alias "${u.alias}" has no target named "${u.target}" in the catalog`);
   }
 
   send({ type: 'finished' });

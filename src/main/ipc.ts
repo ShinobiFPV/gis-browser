@@ -3,7 +3,7 @@ import { CH, type SearchRequest, type SearchResponse } from '@shared/ipc';
 import type { AppSettings, SourceRow } from '@shared/types';
 import { getDb } from '@db/index';
 import { listSources, setSourceStatus } from '@db/queries';
-import { quickFind } from '@resolve/quick-find';
+import { resolve as resolveQuery } from '@resolve/resolve';
 import { clearKey, hasKey, setKey } from './keychain';
 import { cancelHarvest, startHarvest } from './harvester-host';
 import { getGeometry } from './geometry-service';
@@ -51,28 +51,26 @@ export function registerIpc(win: BrowserWindow, ctx: { dbPath: string; dataDir: 
   ipcMain.handle(CH.searchRun, (_e, req: SearchRequest): SearchResponse => {
     if (!req || typeof req.prompt !== 'string') throw new Error('search:run expects a prompt string');
 
-    // M2 uses the provisional FTS lookup so a boundary can be selected and previewed.
-    // M3 replaces this with the real matcher, M4 adds the Claude parse and rank passes.
-    const started = Date.now();
-    const candidates = quickFind(getDb(), req.prompt, {
-      featureType: req.featureTypeFilter ?? null,
-      jurisdiction: req.jurisdictionFilter ?? null,
+    // M4 adds the Claude parse and rank passes in front of this; the local matcher below
+    // stays as the fallback, and is what `useLlm: false` runs on.
+    const result = resolveQuery(getDb(), req.prompt, {
+      featureTypeFilter: req.featureTypeFilter ?? null,
+      jurisdictionFilter: req.jurisdictionFilter ?? null,
       limit: req.limit ?? 15,
     });
-    const matchMs = Date.now() - started;
 
     return {
-      candidates,
+      candidates: result.candidates,
       parsed: {
-        placeNames: [req.prompt],
-        featureTypeHint: req.featureTypeFilter ?? null,
-        jurisdictionHint: req.jurisdictionFilter ?? null,
-        vintageHint: null,
-        wants: 'outline',
-        notes: 'provisional literal lookup; the parser arrives in M4',
-        via: 'keyword',
+        placeNames: result.parsed.placeNames,
+        featureTypeHint: result.parsed.featureTypeHint,
+        jurisdictionHint: result.parsed.jurisdictionHint,
+        vintageHint: result.parsed.vintageHint,
+        wants: result.parsed.wants,
+        notes: [result.parsed.notes, ...result.notes].filter(Boolean).join('; '),
+        via: result.parsed.via,
       },
-      timings: { parseMs: 0, matchMs, rankMs: 0 },
+      timings: result.timings,
     };
   });
 

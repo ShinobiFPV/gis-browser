@@ -3,6 +3,7 @@ import { dirname } from 'node:path';
 import Database from 'better-sqlite3';
 import { migrate } from './migrations';
 import { SEED_SOURCES } from './seed/sources';
+import { applyManualAliases } from '@resolve/manual-aliases';
 import { assertFeatureType } from '@shared/taxonomy';
 
 export type Db = Database.Database;
@@ -31,6 +32,15 @@ export function openDb(path: string): Db {
 
   const seeded = seedSources(db);
   if (seeded.inserted > 0) console.log(`[db] seeded ${seeded.inserted} new source(s)`);
+
+  // Ingest rebuilds a feature's aliases from scratch, so the curated ones have to be
+  // re-applied after any harvest. Doing it on open covers the case where the app is
+  // restarted between a harvest and a search.
+  const manual = applyManualAliases(db);
+  if (manual.inserted > 0) console.log(`[db] applied ${manual.inserted} manual alias row(s)`);
+  for (const u of manual.unmatched) {
+    console.warn(`[db] manual alias "${u.alias}" has no target named "${u.target}" in the catalog`);
+  }
 
   handle = db;
   return db;
