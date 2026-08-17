@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "description": "Plain-language search for official Canadian boundary geometry, for broadcast graphics",
   "author": "ShinTech Electronics",
-  "license": "UNLICENSED",
+  "license": "MIT",
   "private": true,
   "main": "./out/main/index.js",
   "type": "module",
