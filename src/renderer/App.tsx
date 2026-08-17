@@ -1,11 +1,12 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { AppSettings, Candidate, HarvestProgress, SourceRow } from '@shared/types';
-import type { GeometryResult, LogLine } from '@shared/ipc';
+import type { FirstRunStatus, GeometryResult, LogLine } from '@shared/ipc';
 import { SourcesPane } from './panes/SourcesPane';
 import { SearchPane } from './panes/SearchPane';
 import { PreviewPane } from './panes/PreviewPane';
 import { ExportPane } from './panes/ExportPane';
 import { SettingsStrip } from './components/SettingsStrip';
+import { FirstRunWizard } from './components/FirstRunWizard';
 
 export function App(): React.JSX.Element {
   const [settings, setSettings] = useState<AppSettings | null>(null);
@@ -19,6 +20,8 @@ export function App(): React.JSX.Element {
   const [showSettings, setShowSettings] = useState(
     new URLSearchParams(location.search).has('settings'),
   );
+
+  const [firstRun, setFirstRun] = useState<FirstRunStatus | null>(null);
 
   const promptRef = useRef<HTMLTextAreaElement>(null);
 
@@ -41,6 +44,7 @@ export function App(): React.JSX.Element {
   useEffect(() => {
     void refreshSettings();
     void refreshSources();
+    void window.gis.firstRunStatus().then(setFirstRun);
 
     const offProgress = window.gis.onHarvestProgress((p) => {
       setProgress((prev) => ({ ...prev, [p.sourceId]: p }));
@@ -82,6 +86,19 @@ export function App(): React.JSX.Element {
 
   return (
     <div className="app">
+      {/* Shown only on an install with nothing indexed. Dismissible, never focus-trapping. */}
+      {firstRun?.show && (
+        <FirstRunWizard
+          status={firstRun}
+          progress={Object.values(progress)}
+          onDone={() => {
+            setFirstRun(null);
+            void refreshSources();
+            void refreshSettings();
+          }}
+        />
+      )}
+
       <header className="titlebar">
         <div className="brand">
           GIS <span>Browser</span>

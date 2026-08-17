@@ -903,3 +903,121 @@ b.dim {
   padding-left: 6px;
   border-left: 2px solid var(--warn);
 }
+
+/* --- M8 first-run wizard --- */
+
+/* An overlay, not a modal dialog: it never traps focus and always offers a way out. */
+.wizard {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  background: rgba(8, 11, 15, 0.88);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  overflow-y: auto;
+}
+
+.wizard-card {
+  width: min(560px, 100%);
+  background: var(--bg-pane);
+  border: 1px solid var(--border-strong);
+  border-radius: 4px;
+  padding: 20px 22px;
+  box-shadow: 0 18px 60px rgba(0, 0, 0, 0.6);
+}
+
+.wizard-head {
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+  margin-bottom: 14px;
+}
+
+.wizard-head h1 {
+  font-size: 20px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  margin: 0;
+  flex: 1;
+  /* Without this the two words wrap around the skip link and read as a broken layout. */
+  white-space: nowrap;
+}
+
+.wizard-head h1 span { color: var(--accent); }
+
+.wizard-card p {
+  margin: 0 0 10px 0;
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.wizard-card p.dim { color: var(--text-dim); }
+
+.wizard-option {
+  display: flex;
+  gap: 9px;
+  align-items: flex-start;
+  padding: 9px 10px;
+  margin: 6px 0;
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  cursor: pointer;
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.wizard-option:hover { background: var(--bg-raised); }
+.wizard-option.sel { border-color: var(--accent); background: #16283d; }
+.wizard-option .dim { color: var(--text-dim); font-size: 11px; margin-top: 2px; }
+.wizard-option input { margin-top: 2px; accent-color: var(--accent); }
+
+.wizard-note {
+  font-size: 10px;
+  line-height: 1.45;
+  color: var(--text-faint);
+  margin: 6px 0 12px 0;
+}
+
+.wizard-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 16px;
+  padding-top: 14px;
+  border-top: 1px solid var(--border);
+}
+
+.wizard-actions .dim {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 10px;
+  color: var(--text-faint);
+}
+
+.wizard-progress {
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  padding: 8px 10px;
+  margin: 10px 0;
+  min-height: 90px;
+  font-size: 11px;
+}
+
+.wizard-progress-row {
+  display: flex;
+  gap: 10px;
+  padding: 2px 0;
+}
+
+.wizard-progress-row .name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}

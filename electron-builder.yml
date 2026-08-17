@@ -10,20 +10,38 @@ files:
   - out/**
   - package.json
   - '!**/*.map'
+  # better-sqlite3 ships a prebuilt N-API binary for every platform it supports -- eight
+  # of them, 16 MB, of which a Windows x64 build loads exactly one. There is no
+  # build/Release fallback in v13, so the remaining file is genuinely the one used;
+  # verified by running the installed app afterwards, not by reading the loader.
+  - '!**/node_modules/better-sqlite3/prebuilds/!(win32-x64).node'
 
-# better-sqlite3 is the only native module; it is unpacked so its .node binary is
-# loadable from inside the asar.
+# better-sqlite3 is the only native module. Its .node binary cannot be loaded from inside
+# an asar, so it is unpacked beside it. Verified by running the packaged app, not assumed:
+# a broken unpack shows up as the window opening and then dying on the first query.
 asarUnpack:
   - '**/node_modules/better-sqlite3/**'
+
+# No update server. Left explicit so electron-builder does not infer one from the repo.
+publish: null
 
 win:
   target:
     - target: nsis
       arch: [x64]
+  icon: build/icon.ico
   artifactName: ${productName}-${version}-setup.${ext}
 
 nsis:
   oneClick: false
   perMachine: false
   allowToChangeInstallationDirectory: true
+  createDesktopShortcut: true
+  createStartMenuShortcut: true
   shortcutName: GIS Browser
+  installerIcon: build/icon.ico
+  uninstallerIcon: build/icon.ico
+  # The catalog is expensive: a full harvest indexes 90,000 features and the Tier B
+  # archives run to hundreds of megabytes. Uninstalling the application must not silently
+  # destroy it -- someone reinstalling after a crash would otherwise re-download the lot.
+  deleteAppDataOnUninstall: false

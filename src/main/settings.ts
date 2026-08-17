@@ -20,6 +20,12 @@ export interface Preferences {
    * is outside that path.
    */
   exportFolder: string;
+  /**
+   * When the first-run wizard was completed or deliberately skipped. Null means it has
+   * never been answered, which is not the same as the catalog being empty -- see
+   * shouldShowWizard.
+   */
+  firstRunCompletedAt: string | null;
 }
 
 function defaultExportFolder(): string {
@@ -29,7 +35,7 @@ function defaultExportFolder(): string {
   return join(app.getPath('documents'), 'GIS Browser Exports');
 }
 
-const DEFAULTS: Preferences = { anthropicModel: DEFAULT_MODEL, exportFolder: '' };
+const DEFAULTS: Preferences = { anthropicModel: DEFAULT_MODEL, exportFolder: '', firstRunCompletedAt: null };
 
 let cache: Preferences | null = null;
 
@@ -55,6 +61,8 @@ function load(): Preferences {
         typeof raw.exportFolder === 'string' && raw.exportFolder.trim()
           ? raw.exportFolder
           : defaultExportFolder(),
+      firstRunCompletedAt:
+        typeof raw.firstRunCompletedAt === 'string' ? raw.firstRunCompletedAt : null,
     };
   } catch {
     console.warn('[settings] preferences.json is unreadable; using defaults');

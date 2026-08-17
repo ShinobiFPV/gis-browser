@@ -7,6 +7,7 @@ import {
   type GisBridge,
   type LogLine,
   type SearchRequest,
+  type StarterPlan,
 } from '@shared/ipc';
 import type { HarvestProgress, SourceRow } from '@shared/types';
 
@@ -28,6 +29,9 @@ const bridge: GisBridge = {
   discoveryList: () => ipcRenderer.invoke(CH.discoveryList),
   discoveryDecide: (id: number, decision: 'accepted' | 'rejected') =>
     ipcRenderer.invoke(CH.discoveryDecide, id, decision),
+  firstRunStatus: () => ipcRenderer.invoke(CH.firstRunStatus),
+  firstRunStart: (plan: StarterPlan) => ipcRenderer.invoke(CH.firstRunStart, plan),
+  firstRunDismiss: () => ipcRenderer.invoke(CH.firstRunDismiss),
   harvestStart: (sourceIds: number[]) => ipcRenderer.invoke(CH.harvestStart, sourceIds),
   harvestCancel: () => ipcRenderer.invoke(CH.harvestCancel),
   searchRun: (req: SearchRequest) => ipcRenderer.invoke(CH.searchRun, req),

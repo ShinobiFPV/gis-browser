@@ -18,6 +18,9 @@ export const CH = {
   discoveryRun: 'discovery:run',
   discoveryList: 'discovery:list',
   discoveryDecide: 'discovery:decide',
+  firstRunStatus: 'firstRun:status',
+  firstRunStart: 'firstRun:start',
+  firstRunDismiss: 'firstRun:dismiss',
   harvestStart: 'harvest:start',
   harvestCancel: 'harvest:cancel',
   searchRun: 'search:run',
@@ -77,9 +80,21 @@ export interface GeometryResult {
   generalisationDeg: number | null;
 }
 
-/**
- * A source the crawlers proposed. Never harvested or searched until someone accepts it.
- */
+export type StarterPlan = 'essential' | 'tier-a' | 'skip';
+
+/** What the first-run wizard needs to decide whether to appear and what to offer. */
+export interface FirstRunStatus {
+  show: boolean;
+  featureCount: number;
+  sourceCount: number;
+  /** How many sources each plan would harvest, so the choice states its own cost. */
+  essentialCount: number;
+  tierACount: number;
+  hasAnthropicKey: boolean;
+  exportFolder: string;
+}
+
+/** A source the crawlers proposed. Never harvested or searched until someone accepts it. */
 export interface DiscoveredRow {
   id: number;
   catalog: string;
@@ -193,6 +208,9 @@ export interface GisBridge {
   discoveryRun(req: DiscoveryRunRequest): Promise<DiscoveryRunResult>;
   discoveryList(): Promise<DiscoveredRow[]>;
   discoveryDecide(id: number, decision: 'accepted' | 'rejected'): Promise<{ ok: boolean; error?: string }>;
+  firstRunStatus(): Promise<FirstRunStatus>;
+  firstRunStart(plan: StarterPlan): Promise<{ ok: boolean; started: number; error?: string }>;
+  firstRunDismiss(): Promise<{ ok: boolean }>;
   harvestStart(sourceIds: number[]): Promise<{ ok: boolean; error?: string }>;
   harvestCancel(): Promise<void>;
   searchRun(req: SearchRequest): Promise<SearchResponse>;

@@ -4,6 +4,7 @@ import {
   CH,
   type BulkDownload,
   type DiscoveryRunRequest,
+  type FirstRunStatus,
   type ExportRequest,
   type ExportResult,
   type SearchRequest,
@@ -18,6 +19,7 @@ import { getGeometry } from './geometry-service';
 import { runSearch } from './search-service';
 import { runExport } from './export-service';
 import { decideCandidate, listDiscovered, runDiscoveryJob } from './discovery-service';
+import { selectStarterSources, shouldShowWizard } from './first-run';
 import { MODELS } from './anthropic';
 import { getSetting, setSetting } from './settings';
 
@@ -110,6 +112,51 @@ export function registerIpc(win: BrowserWindow, ctx: { dbPath: string; dataDir: 
     db.prepare('DELETE FROM bulk_downloads WHERE source_id = ?').run(sourceId);
     console.log(`[downloads] removed ${row.local_path}, freed ${freedBytes} bytes`);
     return { ok: true, freedBytes };
+  });
+
+  // --- M8 first run ---------------------------------------------------------------
+  ipcMain.handle(CH.firstRunStatus, (): FirstRunStatus => {
+    const db = getDb();
+    const sources = listSources(db);
+    const featureCount = (db.prepare('SELECT COUNT(*) n FROM features').get() as { n: number }).n;
+
+    return {
+      show: shouldShowWizard({ featureCount, completedAt: getSetting('firstRunCompletedAt') }),
+      featureCount,
+      sourceCount: sources.length,
+      essentialCount: selectStarterSources(sources, 'essential').sourceIds.length,
+      tierACount: selectStarterSources(sources, 'tier-a').sourceIds.length,
+      hasAnthropicKey: hasKey(),
+      exportFolder: getSetting('exportFolder'),
+    };
+  });
+
+  /**
+   * Starts the first harvest and records that the wizard has been answered.
+   *
+   * The flag is written whichever plan is chosen, including 'skip': someone who declines
+   * has answered the question, and asking again on every launch would be nagging.
+   */
+  ipcMain.handle(CH.firstRunStart, (_e, plan: unknown) => {
+    if (plan !== 'essential' && plan !== 'tier-a' && plan !== 'skip') {
+      return { ok: false, started: 0, error: `Unknown starter plan "${String(plan)}"` };
+    }
+
+    setSetting('firstRunCompletedAt', new Date().toISOString());
+    if (plan === 'skip') return { ok: true, started: 0 };
+
+    const selection = selectStarterSources(listSources(getDb()), plan);
+    if (selection.sourceIds.length === 0) return { ok: true, started: 0 };
+
+    const res = startHarvest(win, ctx.dbPath, selection.sourceIds);
+    return res.ok
+      ? { ok: true, started: selection.sourceIds.length }
+      : { ok: false, started: 0, error: res.error };
+  });
+
+  ipcMain.handle(CH.firstRunDismiss, () => {
+    setSetting('firstRunCompletedAt', new Date().toISOString());
+    return { ok: true };
   });
 
   // --- M7 discovery -------------------------------------------------------------
