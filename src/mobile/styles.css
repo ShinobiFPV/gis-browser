@@ -1,0 +1,547 @@
+/*
+ * GIS Browser Mobile.
+ *
+ * The desktop stylesheet is built for density -- 22px rows, 12px type, four panes side by
+ * side. None of that survives contact with a phone, so this is a separate sheet rather than
+ * an override layer. What it keeps is the palette, because the two apps should look like
+ * one product, and the rule that nothing interactive is smaller than a finger: 44px is the
+ * floor, everywhere, which is why the row heights below look generous next to the desktop's.
+ */
+
+:root {
+  --bg: #0d1117;
+  --bg-pane: #11161d;
+  --bg-raised: #161d26;
+  --bg-input: #0a0e14;
+  --border: #232c38;
+  --border-strong: #33404f;
+  --text: #d7dee7;
+  --text-dim: #8b98a8;
+  --text-faint: #5d6875;
+  --accent: #4d9fff;
+  --accent-dim: #1f4a7a;
+  --ok: #3fb950;
+  --warn: #d29922;
+  --err: #f85149;
+
+  --tap: 44px;
+  --gap: 12px;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+  margin: 0;
+}
+
+body {
+  background: var(--bg);
+  color: var(--text);
+  font: 16px/1.45 -apple-system, 'Segoe UI', system-ui, sans-serif;
+  /* 16px is not a design choice: iOS Safari zooms the whole page when a focused input is
+     smaller than that, and a page that jumps on every search is unusable. */
+  -webkit-text-size-adjust: 100%;
+  overscroll-behavior-y: contain;
+}
+
+code {
+  font-family: ui-monospace, 'Cascadia Mono', Consolas, monospace;
+  font-size: 0.9em;
+  color: var(--text-dim);
+}
+
+.dim {
+  color: var(--text-dim);
+}
+
+/* ---------- boot ---------- */
+
+.boot {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: var(--gap);
+  height: 100%;
+  padding: 24px;
+  text-align: center;
+}
+
+.boot h1 {
+  font-size: 22px;
+  margin: 0;
+}
+
+.boot p {
+  margin: 0;
+  color: var(--text-dim);
+}
+
+.boot.err {
+  text-align: left;
+}
+
+/* ---------- shell ---------- */
+
+.app {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+}
+
+.bar {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: env(safe-area-inset-top) var(--gap) 10px;
+  padding-top: calc(env(safe-area-inset-top) + 10px);
+  background: var(--bg-pane);
+  border-bottom: 1px solid var(--border);
+}
+
+.search {
+  width: 100%;
+  min-height: var(--tap);
+  padding: 0 12px;
+  font-size: 16px;
+  color: var(--text);
+  background: var(--bg-input);
+  border: 1px solid var(--border-strong);
+  border-radius: 10px;
+}
+
+.search:focus {
+  outline: 2px solid var(--accent);
+  outline-offset: -1px;
+}
+
+.filters {
+  display: flex;
+  gap: 8px;
+}
+
+select {
+  flex: 1;
+  min-width: 0;
+  min-height: 36px;
+  padding: 0 8px;
+  font-size: 14px;
+  color: var(--text);
+  background: var(--bg-raised);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+
+/* ---------- results ---------- */
+
+.results {
+  flex: 1;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  padding-bottom: 96px;
+}
+
+.list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.list li {
+  display: flex;
+  align-items: center;
+  border-bottom: 1px solid var(--border);
+}
+
+.row {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-height: var(--tap);
+  padding: 10px var(--gap);
+  text-align: left;
+  background: none;
+  border: none;
+  color: inherit;
+  font: inherit;
+}
+
+.row:active {
+  background: var(--bg-raised);
+}
+
+.row-name {
+  font-weight: 600;
+  /* Names are long and a phone is narrow. Wrapping beats truncating: "Parry Sound—Muskoka"
+     and "Parry Sound—Muskoka—Kiiwetinoong" are the same string until the last word. */
+  overflow-wrap: anywhere;
+}
+
+.row-meta {
+  font-size: 13px;
+  color: var(--text-dim);
+}
+
+.row-source {
+  font-size: 12px;
+  color: var(--text-faint);
+}
+
+.empty,
+.footnote {
+  padding: 20px var(--gap);
+  color: var(--text-dim);
+}
+
+.footnote {
+  font-size: 12px;
+  color: var(--text-faint);
+  text-align: center;
+}
+
+.empty p {
+  margin: 0 0 10px;
+}
+
+/* ---------- buttons ---------- */
+
+button {
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+
+.icon {
+  flex: 0 0 auto;
+  width: var(--tap);
+  height: var(--tap);
+  display: grid;
+  place-items: center;
+  font-size: 20px;
+  background: none;
+  border: none;
+  color: var(--text-faint);
+}
+
+.icon.on {
+  color: var(--accent);
+}
+
+.primary {
+  width: 100%;
+  min-height: var(--tap);
+  padding: 0 16px;
+  font-weight: 600;
+  color: #041018;
+  background: var(--accent);
+  border: none;
+  border-radius: 10px;
+}
+
+.primary:disabled {
+  background: var(--accent-dim);
+  color: var(--text-dim);
+}
+
+.setbar {
+  position: fixed;
+  left: var(--gap);
+  right: var(--gap);
+  bottom: calc(env(safe-area-inset-bottom) + var(--gap));
+  z-index: 3;
+  min-height: var(--tap);
+  font-weight: 600;
+  color: #041018;
+  background: var(--accent);
+  border: none;
+  border-radius: 12px;
+  box-shadow: 0 6px 24px rgb(0 0 0 / 45%);
+}
+
+/* ---------- sheet ---------- */
+
+.sheet {
+  position: fixed;
+  inset: 0;
+  z-index: 10;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg);
+}
+
+.sheet-head {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding-top: env(safe-area-inset-top);
+  background: var(--bg-pane);
+  border-bottom: 1px solid var(--border);
+}
+
+.sheet-head h1 {
+  flex: 1;
+  min-width: 0;
+  margin: 0;
+  font-size: 17px;
+  line-height: 1.25;
+  overflow-wrap: anywhere;
+}
+
+.sheet-body {
+  flex: 1;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  padding: var(--gap);
+  padding-bottom: calc(env(safe-area-inset-bottom) + 32px);
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+
+/* ---------- preview ---------- */
+
+.preview-shell {
+  position: relative;
+  background: var(--bg-pane);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  overflow: hidden;
+}
+
+.preview {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+
+.preview-frame {
+  fill: #070a0e;
+}
+
+.preview-shape {
+  fill: var(--accent);
+  fill-opacity: 0.18;
+  /* evenodd so an enclave stays a hole rather than filling solid. */
+  fill-rule: evenodd;
+  stroke: var(--accent);
+  stroke-width: 1.2;
+  stroke-linejoin: round;
+  vector-effect: non-scaling-stroke;
+}
+
+.preview-empty {
+  fill: var(--text-faint);
+  font-size: 13px;
+}
+
+.overlay {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  padding: 16px;
+  text-align: center;
+  font-size: 14px;
+  background: rgb(7 10 14 / 82%);
+}
+
+.overlay.err {
+  color: var(--err);
+}
+
+.overlay button {
+  min-height: 36px;
+  padding: 0 14px;
+  color: var(--text);
+  background: var(--bg-raised);
+  border: 1px solid var(--border-strong);
+  border-radius: 8px;
+}
+
+.badge {
+  position: absolute;
+  left: 8px;
+  bottom: 8px;
+  padding: 3px 8px;
+  font-size: 12px;
+  color: var(--text-dim);
+  background: rgb(7 10 14 / 88%);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+}
+
+.badge.warn {
+  color: var(--warn);
+  border-color: var(--warn);
+}
+
+/* ---------- facts ---------- */
+
+.facts {
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.facts > div {
+  display: flex;
+  gap: 10px;
+  align-items: baseline;
+}
+
+.facts dt {
+  flex: 0 0 96px;
+  font-size: 13px;
+  color: var(--text-faint);
+}
+
+.facts dd {
+  flex: 1;
+  min-width: 0;
+  margin: 0;
+  font-size: 14px;
+  overflow-wrap: anywhere;
+}
+
+/* ---------- export ---------- */
+
+.export {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding-top: 4px;
+  border-top: 1px solid var(--border);
+}
+
+.export-pending {
+  padding: 14px 0;
+  color: var(--text-dim);
+  border-top: 1px solid var(--border);
+}
+
+.seg {
+  display: flex;
+  border: 1px solid var(--border-strong);
+  border-radius: 10px;
+  overflow: hidden;
+}
+
+.seg button {
+  flex: 1;
+  min-height: var(--tap);
+  background: var(--bg-raised);
+  border: none;
+  color: var(--text-dim);
+}
+
+.seg button.seg-on {
+  background: var(--accent-dim);
+  color: var(--text);
+  font-weight: 600;
+}
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 13px;
+  color: var(--text-dim);
+}
+
+.field em {
+  font-style: normal;
+  font-size: 12px;
+  color: var(--text-faint);
+}
+
+.field-note {
+  margin: 0;
+  font-size: 13px;
+  color: var(--text-faint);
+}
+
+.msg {
+  margin: 0;
+  padding: 10px 12px;
+  font-size: 13px;
+  border-radius: 8px;
+  overflow-wrap: anywhere;
+}
+
+.msg.err {
+  color: var(--err);
+  background: rgb(248 81 73 / 10%);
+}
+
+.msg.warn {
+  color: var(--warn);
+  background: rgb(210 153 34 / 10%);
+}
+
+.msg.ok {
+  color: var(--text);
+  background: rgb(63 185 80 / 10%);
+}
+
+.credit {
+  margin-top: 6px;
+  font-size: 12px;
+  color: var(--text-dim);
+}
+
+.credit.warn {
+  color: var(--warn);
+}
+
+/* ---------- set ---------- */
+
+.set-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.set-list li {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.set-list li.failed .set-name b {
+  color: var(--err);
+}
+
+.set-name {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  font-size: 14px;
+  overflow-wrap: anywhere;
+}
+
+.set-name .dim {
+  font-size: 12px;
+}
+
+.set-state {
+  font-size: 12px;
+  color: var(--text-faint);
+  white-space: nowrap;
+}

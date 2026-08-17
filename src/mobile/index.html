@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <!--
+      viewport-fit=cover plus the safe-area insets in styles.css: without it the bottom bar
+      sits under the iPhone home indicator, which is where the Export button lives.
+      user-scalable is left alone on purpose -- pinching a boundary preview is the point.
+    -->
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="theme-color" content="#0d1117" />
+    <meta name="description" content="Plain-language search for official boundary geometry, on a phone." />
+
+    <!--
+      No CSP meta tag here, unlike the desktop renderer.
+
+      The desktop can forbid every external host because it talks to services through the
+      main process. This build IS the client: it fetches boundaries straight from Elections
+      Canada, StatCan and the provinces, and the set of hosts is whatever the catalog was
+      built from. A connect-src list would have to be regenerated with every index and would
+      silently break a source the day it moved. The real boundary here is the browser's own
+      origin policy, which is why Tier B is not offered at all -- see lib/catalog.ts.
+    -->
+
+    <link rel="manifest" href="./manifest.webmanifest" />
+    <link rel="icon" href="./icon.svg" type="image/svg+xml" />
+    <link rel="apple-touch-icon" href="./icon-180.png" />
+    <title>GIS Browser Mobile</title>
+  </head>
+  <body>
+    <div id="root"></div>
+    <noscript>GIS Browser Mobile needs JavaScript: the catalog is searched on the device.</noscript>
+    <script type="module" src="./main.tsx"></script>
+  </body>
+</html>

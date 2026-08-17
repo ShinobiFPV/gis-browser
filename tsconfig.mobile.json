@@ -1,0 +1,65 @@
+{
+  "extends": "./tsconfig.base.json",
+  /*
+   * Only what the PWA actually compiles.
+   *
+   * What is NOT here is the point. No src/main and no src/renderer, obviously -- but also
+   * only normalize/ out of the harvester, because the rest of it streams downloads to disk
+   * through node:stream, and node's ReadableStream and the DOM's are not the same type. A
+   * project that compiles with both "node" and "DOM" in scope cannot typecheck those files
+   * and has no reason to try: the mobile build never imports them, and if it ever starts
+   * to, this file fails and says which one.
+   *
+   * "node" is still needed in `types`: src/resolve type-imports the database handle, and
+   * db/index.ts reaches node:fs to create its directory.
+   */
+  "include": [
+    "src/mobile/**/*",
+    "src/shared/**/*",
+    "src/resolve/**/*",
+    "src/export/**/*",
+    "src/harvester/normalize/**/*",
+    "src/db/**/*",
+    "src/types/**/*",
+    "vite.mobile.config.ts"
+  ],
+  /*
+   * The desktop's tests belong to the node project, which is where they run.
+   *
+   * resolve.test.ts drives the real resolver against a real SQLite database, so it imports
+   * the harvester's ingest path -- and through it the HTTP client, which cannot compile in
+   * a project that also has the DOM in scope. Excluding them here loses no coverage: `npm
+   * run typecheck` still checks every one under tsconfig.node.json.
+   *
+   * src/mobile's own tests are NOT excluded. They are the only tests that need the DOM
+   * types, and this is the only project that has them.
+   */
+  "exclude": [
+    "src/db/**/*.test.ts",
+    "src/export/**/*.test.ts",
+    "src/harvester/**/*.test.ts",
+    "src/resolve/**/*.test.ts",
+    "src/shared/**/*.test.ts"
+  ],
+  "compilerOptions": {
+    // Composite, and referenced from tsconfig.json, so that ESLint's project service can
+    // find a project for these files. src/db is in the include list above only to satisfy
+    // it: a composite project must list every file it loads, and src/resolve type-imports
+    // the database handle. Nothing in src/mobile touches the database at runtime.
+    "composite": true,
+    "tsBuildInfoFile": "./node_modules/.tmp/tsconfig.mobile.tsbuildinfo",
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "lib": ["ES2022", "DOM", "DOM.Iterable"],
+    "jsx": "react-jsx",
+    "types": ["vite/client", "node"],
+    "paths": {
+      "@shared/*": ["src/shared/*"],
+      "@db/*": ["src/db/*"],
+      "@resolve/*": ["src/resolve/*"],
+      "@export/*": ["src/export/*"],
+      "@mobile/*": ["src/mobile/*"]
+    },
+    "noEmit": true
+  }
+}

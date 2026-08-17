@@ -231,6 +231,38 @@ export function looksAxisSwapped(b: Bbox): boolean {
   return withinCanada(swapped).ok;
 }
 
+/**
+ * Merges several polygons into one MultiPolygon, preserving every ring.
+ *
+ * Lives here rather than beside the fetcher that first needed it because it is pure
+ * geometry with no transport in it, and the mobile build -- which cannot import the
+ * fetcher, since that reaches node:fs through the HTTP client -- needs exactly this
+ * function for exactly the same reason: a multipart layer hands back one row per polygon
+ * and a riding has to be reassembled from them.
+ */
+export function mergeGeometries(parts: Geometry[]): Geometry {
+  if (parts.length === 0) throw new Error('cannot merge an empty geometry list');
+  if (parts.length === 1) return parts[0]!;
+
+  const polygons: unknown[] = [];
+  const lines: unknown[] = [];
+
+  for (const p of parts) {
+    if (p.type === 'Polygon') polygons.push(p.coordinates);
+    else if (p.type === 'MultiPolygon') polygons.push(...(p.coordinates as unknown[]));
+    else if (p.type === 'LineString') lines.push(p.coordinates);
+    else if (p.type === 'MultiLineString') lines.push(...(p.coordinates as unknown[]));
+    else throw new Error(`cannot merge geometry of type ${p.type}`);
+  }
+
+  if (polygons.length && lines.length) {
+    throw new Error('refusing to merge polygon and line parts into one feature');
+  }
+  return polygons.length
+    ? { type: 'MultiPolygon', coordinates: polygons }
+    : { type: 'MultiLineString', coordinates: lines };
+}
+
 export function countVertices(geometry: Geometry): number {
   let n = 0;
   const visit = (coords: unknown): void => {

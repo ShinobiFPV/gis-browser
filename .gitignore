@@ -10,6 +10,17 @@ Thumbs.db
 .eslintcache
 coverage/
 
+# The mobile PWA build, and the data files it is built from. All generated:
+# `npm run mobile:data` rebuilds the index, the country pack and the icons from a
+# harvested catalog. The index alone is megabytes and changes with every harvest,
+# which is not something a git history is improved by.
+dist-mobile/
+src/mobile/public/index.json
+src/mobile/public/index.json.gz
+src/mobile/public/world.json.gz
+src/mobile/public/icon*.png
+src/mobile/public/icon.svg
+
 # Local data: the harvested catalog, geometry cache and downloaded bulk files.
 # These are rebuildable from the source registry and can reach hundreds of MB.
 data/

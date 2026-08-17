@@ -68,7 +68,7 @@ function insideRoundRect(px, py, x, y, w, h, r) {
 }
 
 /** Colour at a point in the 256x256 design space. Returns [r,g,b,a]. */
-function shade(x, y) {
+function shadeCore(x, y) {
   if (!insideRoundRect(x, y, 0, 0, 256, 256, 42)) return [0, 0, 0, 0];
 
   // Vertex dots sit on top of everything.
@@ -93,8 +93,29 @@ function shade(x, y) {
   return [...BG, 255];
 }
 
+/**
+ * The Android/PWA "maskable" variant.
+ *
+ * A launcher crops a maskable icon to whatever shape it likes -- circle, squircle, teardrop
+ * -- and only guarantees the middle 80%. So the rounded square is dropped in favour of full
+ * bleed, and the artwork is shrunk to sit inside the safe zone. Handing the same rounded
+ * square to a circular mask would clip its own corners off and look like a mistake.
+ */
+const MASKABLE_SCALE = 0.72;
+
+function shade(x, y, maskable) {
+  if (!maskable) return shadeCore(x, y);
+
+  const mx = (x - 128) / MASKABLE_SCALE + 128;
+  const my = (y - 128) / MASKABLE_SCALE + 128;
+  const colour = shadeCore(mx, my);
+  // Outside the design square the icon is background, never transparent: a maskable icon
+  // with holes shows the launcher's wallpaper through them.
+  return colour[3] === 0 ? [...BG, 255] : colour;
+}
+
 /** Renders RGBA at `size`, supersampled and box-filtered. */
-function render(size) {
+function render(size, maskable = false) {
   const out = Buffer.alloc(size * size * 4);
   const scale = 256 / (size * SS);
 
@@ -106,7 +127,11 @@ function render(size) {
 
       for (let sy = 0; sy < SS; sy++) {
         for (let sx = 0; sx < SS; sx++) {
-          const [cr, cg, cb, ca] = shade((px * SS + sx + 0.5) * scale, (py * SS + sy + 0.5) * scale);
+          const [cr, cg, cb, ca] = shade(
+            (px * SS + sx + 0.5) * scale,
+            (py * SS + sy + 0.5) * scale,
+            maskable,
+          );
           if (ca === 0) continue;
           r += cr; g += cg; b += cb; opaque++;
         }
@@ -258,3 +283,49 @@ console.log(`wrote build/icon.icns (${icns.length} bytes, ${ICNS_TYPES.length} e
 // and it must be at least 512x512.
 writeFileSync(join(root, 'build', 'icon.png'), pngBySize.get(1024));
 console.log('wrote build/icon.png  (1024x1024)');
+
+// --- PWA ------------------------------------------------------------------------
+
+/**
+ * The same eight shapes again, for the phone.
+ *
+ * Generated from this file rather than exported by hand so the installed PWA, the Windows
+ * taskbar and the macOS Dock cannot drift apart. 180 is Apple's touch icon; 192 and 512 are
+ * what the Web App Manifest spec's installability checks look for.
+ */
+const PWA_DIR = join(root, 'src', 'mobile', 'public');
+mkdirSync(PWA_DIR, { recursive: true });
+
+for (const size of [180, 192, 512]) {
+  const data = encodePng(render(size), size);
+  writeFileSync(join(PWA_DIR, `icon-${size}.png`), data);
+  console.log(`wrote src/mobile/public/icon-${size}.png (${data.length} bytes)`);
+}
+
+for (const size of [192, 512]) {
+  const data = encodePng(render(size, true), size);
+  writeFileSync(join(PWA_DIR, `icon-maskable-${size}.png`), data);
+  console.log(`wrote src/mobile/public/icon-maskable-${size}.png (${data.length} bytes)`);
+}
+
+/**
+ * A vector copy for the browser tab, where a 16px raster is a smudge.
+ *
+ * Written straight from the same polygon and palette, so it is the icon rather than a
+ * lookalike of it.
+ */
+const svg =
+  `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256">\n` +
+  `  <rect width="256" height="256" rx="42" fill="${hex(BG)}"/>\n` +
+  `  <rect x="5" y="5" width="246" height="246" rx="38" fill="none" stroke="${hex(BORDER)}" stroke-width="1"/>\n` +
+  `  <path d="${POLYGON.map(([x, y], i) => `${i === 0 ? 'M' : 'L'}${x},${y}`).join('')}Z" ` +
+  `fill="${hex(FILL)}" stroke="${hex(LINE)}" stroke-width="11" stroke-linejoin="round"/>\n` +
+  POLYGON.map(([x, y]) => `  <circle cx="${x}" cy="${y}" r="13" fill="${hex(LINE)}"/>`).join('\n') +
+  `\n</svg>\n`;
+
+writeFileSync(join(PWA_DIR, 'icon.svg'), svg);
+console.log(`wrote src/mobile/public/icon.svg (${svg.length} bytes)`);
+
+function hex([r, g, b]) {
+  return `#${[r, g, b].map((n) => n.toString(16).padStart(2, '0')).join('')}`;
+}

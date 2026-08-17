@@ -5,11 +5,17 @@ import {
   bboxOf,
   countVertices,
   looksAxisSwapped,
+  mergeGeometries,
   swapAxes,
   toWgs84,
   withinCanada,
   type Geometry,
 } from './normalize/crs';
+
+// Re-exported so callers and tests keep importing it from the fetcher that made it
+// necessary. It moved to normalize/crs so the mobile build can reach it without dragging
+// the node-only HTTP client along; see the note there.
+export { mergeGeometries };
 import type { SourceRow } from '@shared/types';
 
 /**
@@ -46,30 +52,6 @@ export interface FetchedGeometry {
  * Values are degrees in the output SR (4326). 0.0005° is roughly 40 m of latitude.
  */
 const GENERALISATION_LADDER: (number | null)[] = [null, 0.0005, 0.002, 0.01];
-
-/** Merges several polygons into one MultiPolygon, preserving every ring. */
-export function mergeGeometries(parts: Geometry[]): Geometry {
-  if (parts.length === 0) throw new Error('cannot merge an empty geometry list');
-  if (parts.length === 1) return parts[0]!;
-
-  const polygons: unknown[] = [];
-  const lines: unknown[] = [];
-
-  for (const p of parts) {
-    if (p.type === 'Polygon') polygons.push(p.coordinates);
-    else if (p.type === 'MultiPolygon') polygons.push(...(p.coordinates as unknown[]));
-    else if (p.type === 'LineString') lines.push(p.coordinates);
-    else if (p.type === 'MultiLineString') lines.push(...(p.coordinates as unknown[]));
-    else throw new Error(`cannot merge geometry of type ${p.type}`);
-  }
-
-  if (polygons.length && lines.length) {
-    throw new Error('refusing to merge polygon and line parts into one feature');
-  }
-  return polygons.length
-    ? { type: 'MultiPolygon', coordinates: polygons }
-    : { type: 'MultiLineString', coordinates: lines };
-}
 
 /**
  * Validates and normalises whatever a service handed back.
