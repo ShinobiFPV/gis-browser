@@ -137,10 +137,29 @@ reported with its size, so you can judge whether to care.
 
 ### Install
 
-Download the installer from [Releases](../../releases) and run it. Windows x64.
+From [Releases](../../releases):
 
-> The installer is **unsigned**, so SmartScreen will warn on first run until it builds
-> reputation. Choose *More info → Run anyway*.
+| Platform | File |
+|---|---|
+| Windows x64 | `GIS Browser-<version>-setup.exe` |
+| macOS Apple silicon | `GIS Browser-<version>-arm64.dmg` |
+| macOS Intel | `GIS Browser-<version>-x64.dmg` |
+
+**Both builds are unsigned**, and the two platforms handle that differently.
+
+*Windows* — SmartScreen warns on first run until the installer builds reputation. Choose
+*More info → Run anyway*.
+
+*macOS* — Gatekeeper is stricter. A downloaded unsigned app is quarantined, and macOS
+reports that it **"is damaged and can't be opened"**, which is misleading: the app is
+fine, it simply is not notarized. After dragging it to Applications, clear the quarantine
+attribute:
+
+```bash
+xattr -dr com.apple.quarantine "/Applications/GIS Browser.app"
+```
+
+Signing and notarizing both require certificates this project does not have.
 
 On first launch the wizard offers a starter harvest. The essential set (~22 sources —
 ridings, provinces, reserves, municipalities, census subdivisions) takes a few minutes.
@@ -148,7 +167,8 @@ Bulk downloads are never started for you.
 
 ### Build from source
 
-Requires Node 20+ and Windows for the installer target.
+Requires Node 20+. Each installer must be built on its own platform — electron-builder
+rebuilds the native module against the host, so there is no cross-compiling here.
 
 ```bash
 npm install          # postinstall rebuilds better-sqlite3 for Electron
@@ -156,24 +176,28 @@ npm run dev          # run in development
 npm test             # 415 tests
 npm run typecheck    # strict TypeScript, both tsconfigs
 npm run lint         # eslint, zero warnings allowed
-npm run dist:win     # NSIS installer into release/
+npm run dist:win     # NSIS installer into release/  (on Windows)
+npm run dist:mac     # arm64 + x64 disk images into release/  (on macOS)
 npm run icon         # regenerate build/icon.ico (pure Node, no image toolchain)
 ```
 
 ### Continuous integration
 
 [`.github/workflows/build.yml`](.github/workflows/build.yml) runs typecheck, lint and the
-full test suite on Linux, then builds the Windows installer and **smoke-tests the packaged
-binary** — `GIS Browser.exe --smoke` opens the catalog, runs every migration, seeds the
-registry and exits.
+full test suite on Linux, then builds the Windows installer and the macOS disk images in
+parallel and **smoke-tests each packaged binary** — `--smoke` opens the catalog, runs every
+migration, seeds the registry and exits, without ever creating a window.
 
 That last step is the one that matters. Packaging can silently break exactly one thing:
 better-sqlite3 is a native module and has to be unpacked from the asar to load. A broken
 unpack builds cleanly, installs cleanly, and then dies on the first query. Running the
 packaged binary is the only way to catch it.
 
-Every push to `main` uploads an installer artefact. Pushing a `v*` tag publishes a
-release.
+It also asserts the exact number of native binaries that survived packaging — one on
+Windows, two on macOS — because the builder config strips the prebuilds for other
+platforms and an over-matching filter would remove SQLite entirely.
+
+Every push to `main` uploads installer artefacts. Pushing a `v*` tag publishes a release.
 
 ### Headless CLI
 
@@ -284,8 +308,11 @@ Stated plainly, because the point of this app is not guessing:
   host-wide and cannot be harvested. The Tier B shapefile fallback covers the 2023 ridings
   completely, which is why that redundancy was seeded.
 - **The installer is unsigned.** Signing needs a code-signing certificate.
-- **Windows only.** Nothing in the codebase is Windows-specific except the installer
-  target and the DPAPI-backed key storage, but no other platform has been built or tested.
+- **The macOS build has never been run by a human.** CI builds both disk images on a real
+  macOS runner and smoke-tests the arm64 bundle — it launches, opens the catalog, runs
+  every migration and seeds the registry — but nobody has installed the `.dmg`, clicked
+  through the UI, or exercised Keychain-backed key storage. The Windows build has.
+- **No Linux target.** Nothing in the codebase prevents one; it simply is not built.
 
 ## Licence
 

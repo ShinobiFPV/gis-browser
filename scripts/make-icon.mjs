@@ -17,7 +17,14 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..');
-const SIZES = [16, 24, 32, 48, 64, 128, 256];
+
+/**
+ * Windows wants 256 at most; macOS wants 1024 for a Retina Dock. Rendered once per size
+ * rather than downscaled from one master, because the outline is a stroke of fixed width
+ * in design space and looks better resampled by the rasteriser than by a box filter.
+ */
+const ICO_SIZES = [16, 24, 32, 48, 64, 128, 256];
+const ICNS_SIZES = [32, 64, 128, 256, 512, 1024];
 const SS = 4; // supersampling factor, for antialiasing
 
 // The app's own palette, so the icon matches the window it opens.
@@ -188,19 +195,66 @@ function buildIco(entries) {
   return Buffer.concat([header, ...dir, ...entries.map((e) => e.data)]);
 }
 
+// --- ICNS -----------------------------------------------------------------------
+
+/**
+ * Apple icon suite. Like ICO, a modern .icns can carry PNG payloads directly: a header,
+ * then one typed entry per image.
+ *
+ * Each OSType names an exact pixel size. The 256 and 512 images appear twice on purpose
+ * -- ic08/ic13 and ic09/ic14 are the 1x and 2x slots for different logical sizes, and
+ * macOS picks between them by display scale.
+ */
+const ICNS_TYPES = [
+  ['ic11', 32], // 16pt @2x
+  ['ic12', 64], // 32pt @2x
+  ['ic07', 128],
+  ['ic13', 256], // 128pt @2x
+  ['ic08', 256],
+  ['ic14', 512], // 256pt @2x
+  ['ic09', 512],
+  ['ic10', 1024], // 512pt @2x
+];
+
+function buildIcns(pngBySize) {
+  const entries = ICNS_TYPES.map(([osType, size]) => {
+    const png = pngBySize.get(size);
+    if (!png) throw new Error(`no rendering at ${size}px for ${osType}`);
+    const header = Buffer.alloc(8);
+    header.write(osType, 0, 'ascii');
+    header.writeUInt32BE(png.length + 8, 4); // length INCLUDES this header
+    return Buffer.concat([header, png]);
+  });
+
+  const body = Buffer.concat(entries);
+  const header = Buffer.alloc(8);
+  header.write('icns', 0, 'ascii');
+  header.writeUInt32BE(body.length + 8, 4);
+  return Buffer.concat([header, body]);
+}
+
 // --- run ------------------------------------------------------------------------
 
-const entries = SIZES.map((size) => {
+const everySize = [...new Set([...ICO_SIZES, ...ICNS_SIZES])].sort((a, b) => a - b);
+const pngBySize = new Map();
+
+for (const size of everySize) {
   const data = encodePng(render(size), size);
-  console.log(`  ${String(size).padStart(3)}x${size}: ${data.length} bytes`);
-  return { size, data };
-});
+  pngBySize.set(size, data);
+  console.log(`  ${String(size).padStart(4)}x${size}: ${data.length} bytes`);
+}
 
 mkdirSync(join(root, 'build'), { recursive: true });
 
-const ico = buildIco(entries);
+const ico = buildIco(ICO_SIZES.map((size) => ({ size, data: pngBySize.get(size) })));
 writeFileSync(join(root, 'build', 'icon.ico'), ico);
-console.log(`wrote build/icon.ico (${ico.length} bytes, ${entries.length} sizes)`);
+console.log(`wrote build/icon.ico  (${ico.length} bytes, ${ICO_SIZES.length} sizes)`);
 
-writeFileSync(join(root, 'build', 'icon.png'), entries[entries.length - 1].data);
-console.log('wrote build/icon.png (256x256)');
+const icns = buildIcns(pngBySize);
+writeFileSync(join(root, 'build', 'icon.icns'), icns);
+console.log(`wrote build/icon.icns (${icns.length} bytes, ${ICNS_TYPES.length} entries)`);
+
+// electron-builder falls back to this for any target with no platform-specific icon,
+// and it must be at least 512x512.
+writeFileSync(join(root, 'build', 'icon.png'), pngBySize.get(1024));
+console.log('wrote build/icon.png  (1024x1024)');

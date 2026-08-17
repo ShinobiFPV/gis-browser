@@ -6,7 +6,7 @@ on:
     tags: ['v*']
   pull_request:
     branches: [main]
-  # So an installer can be produced without pushing anything.
+  # So installers can be produced without pushing anything.
   workflow_dispatch:
 
 concurrency:
@@ -19,8 +19,8 @@ permissions:
   contents: read
 
 jobs:
-  # Fast gate. Runs on Linux because none of it needs Windows, and it fails in about a
-  # minute rather than after an Electron download.
+  # Fast gate. Runs on Linux because none of it needs a desktop OS, and it fails in about
+  # a minute rather than after an Electron download.
   check:
     name: Typecheck, lint, test
     runs-on: ubuntu-latest
@@ -44,9 +44,27 @@ jobs:
       - run: npm test
 
   build:
-    name: Windows installer
+    name: ${{ matrix.label }}
     needs: check
-    runs-on: windows-latest
+    runs-on: ${{ matrix.os }}
+    strategy:
+      # One platform failing should not hide whether the other works.
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            label: Windows installer
+            script: dist:win
+            artifact: gis-browser-windows
+            # Windows ships x64 only, so exactly one native binary should survive.
+            expected_binaries: 1
+          - os: macos-latest
+            label: macOS disk images
+            script: dist:mac
+            artifact: gis-browser-macos
+            # Both Darwin binaries are kept, so arm64 and x64 builds are each correct.
+            expected_binaries: 2
+
     steps:
       - uses: actions/checkout@v7
 
@@ -62,42 +80,41 @@ jobs:
         uses: actions/cache@v6
         with:
           path: |
+            ~/.cache/electron
+            ~/.cache/electron-builder
             ~\AppData\Local\electron\Cache
             ~\AppData\Local\electron-builder\Cache
           key: electron-${{ runner.os }}-${{ hashFiles('package-lock.json') }}
           restore-keys: electron-${{ runner.os }}-
 
-      # Full install here: postinstall runs electron-builder install-app-deps, which is
-      # what makes better-sqlite3 loadable from the packaged app.
+      # Full install: postinstall runs electron-builder install-app-deps, which is what
+      # makes better-sqlite3 loadable from the packaged app.
       - name: Install
         run: npm ci
 
-      - name: Build installer
-        run: npm run dist:win
+      - name: Build
+        run: npm run ${{ matrix.script }}
         env:
-          # There is no code-signing certificate. Stated explicitly so electron-builder
-          # does not go hunting for one on a runner that happens to have any.
+          # No code-signing certificate for either platform. Stated explicitly so
+          # electron-builder does not go hunting for an identity on a runner that has one.
           CSC_IDENTITY_AUTO_DISCOVERY: false
 
       # Packaging can break exactly one thing silently: better-sqlite3 is native and has
       # to be unpacked from the asar to load. A broken unpack builds, installs and then
       # dies on the first query. Running the packaged binary is the only way to know.
-      - name: Smoke-test the packaged app
+      - name: Smoke-test the packaged app (Windows)
+        if: runner.os == 'Windows'
         shell: pwsh
         run: |
           $exe = "release\win-unpacked\GIS Browser.exe"
           if (-not (Test-Path -LiteralPath $exe)) { throw "packaged app not found at $exe" }
 
           $unpacked = "release\win-unpacked\resources\app.asar.unpacked\node_modules\better-sqlite3"
-          if (-not (Test-Path -LiteralPath $unpacked)) { throw "better-sqlite3 was not unpacked from the asar" }
-
-          # Exactly one, because the builder config drops the seven prebuilds for other
-          # platforms. If that filter ever over-matches, the app loses SQLite entirely.
-          $binaries = @(Get-ChildItem -LiteralPath $unpacked -Recurse -Filter *.node)
-          if ($binaries.Count -ne 1) {
-            throw "expected 1 native binary, found $($binaries.Count): $($binaries.Name -join ', ')"
+          $binaries = @(Get-ChildItem -LiteralPath $unpacked -Recurse -Filter *.node -EA SilentlyContinue)
+          if ($binaries.Count -ne ${{ matrix.expected_binaries }}) {
+            throw "expected ${{ matrix.expected_binaries }} native binary/binaries, found $($binaries.Count): $($binaries.Name -join ', ')"
           }
-          Write-Host "native binary: $($binaries[0].Name)"
+          Write-Host "native: $($binaries.Name -join ', ')"
 
           # Opens the catalog, runs every migration, seeds the registry, exits.
           $out = & $exe --smoke 2>&1 | Out-String
@@ -105,19 +122,45 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw "packaged app exited $LASTEXITCODE" }
           if ($out -notmatch '\[smoke\] ok') { throw "smoke test did not report success" }
 
-      - name: Upload installer
+      - name: Smoke-test the packaged app (macOS)
+        if: runner.os == 'macOS'
+        run: |
+          set -euo pipefail
+
+          # macos-latest is arm64, so that is the bundle that can actually be executed
+          # here. The x64 build is packaged but cannot be run on this runner.
+          app="release/mac-arm64/GIS Browser.app"
+          [ -d "$app" ] || app="release/mac/GIS Browser.app"
+          [ -d "$app" ] || { echo "packaged app not found under release/"; ls -la release; exit 1; }
+          echo "testing $app"
+
+          unpacked="$app/Contents/Resources/app.asar.unpacked/node_modules/better-sqlite3"
+          count=$(find "$unpacked" -name '*.node' | wc -l | tr -d ' ')
+          if [ "$count" != "${{ matrix.expected_binaries }}" ]; then
+            echo "expected ${{ matrix.expected_binaries }} native binaries, found $count:"
+            find "$unpacked" -name '*.node'
+            exit 1
+          fi
+          echo "native: $(find "$unpacked" -name '*.node' -exec basename {} \; | tr '\n' ' ')"
+
+          out=$("$app/Contents/MacOS/GIS Browser" --smoke 2>&1)
+          echo "$out"
+          echo "$out" | grep -q '\[smoke\] ok' || { echo "smoke test did not report success"; exit 1; }
+
+      - name: Upload
         uses: actions/upload-artifact@v7
         with:
-          name: gis-browser-setup
+          name: ${{ matrix.artifact }}
           path: |
             release/*.exe
+            release/*.dmg
             release/*.blockmap
           if-no-files-found: error
           retention-days: 30
 
   release:
     name: Publish release
-    # Tags only. A push to main produces a downloadable artefact, not a release.
+    # Tags only. A push to main produces downloadable artefacts, not a release.
     if: startsWith(github.ref, 'refs/tags/v')
     needs: build
     runs-on: ubuntu-latest
@@ -126,8 +169,13 @@ jobs:
     steps:
       - uses: actions/download-artifact@v8
         with:
-          name: gis-browser-setup
+          # Every platform's artefacts, flattened into one directory.
+          pattern: gis-browser-*
+          merge-multiple: true
           path: dist
+
+      - name: List what will be published
+        run: ls -la dist
 
       # gh is preinstalled on the runner, so this needs no third-party action holding a
       # contents:write token.
@@ -137,13 +185,34 @@ jobs:
         run: |
           # --notes is the documented way to prepend text to --generate-notes output.
           NOTES=$(cat <<'EOF'
-          Windows x64 installer.
+          ## Downloads
 
-          **This installer is unsigned.** SmartScreen will warn on first run until it
-          builds reputation — choose *More info → Run anyway*.
+          | Platform | File |
+          |---|---|
+          | Windows x64 | `GIS Browser-<version>-setup.exe` |
+          | macOS Apple silicon | `GIS Browser-<version>-arm64.dmg` |
+          | macOS Intel | `GIS Browser-<version>-x64.dmg` |
 
-          On first launch the app offers a starter harvest. It indexes boundary names
-          only; geometry is fetched when you export something.
+          ## Both builds are unsigned
+
+          **Windows** — SmartScreen will warn on first run until the installer builds
+          reputation. Choose *More info → Run anyway*.
+
+          **macOS** — Gatekeeper is stricter. A downloaded unsigned app is quarantined and
+          macOS will report that it "is damaged and can't be opened", which is misleading:
+          the app is fine, it simply is not notarized. Clear the quarantine attribute after
+          dragging it to Applications:
+
+          ```
+          xattr -dr com.apple.quarantine "/Applications/GIS Browser.app"
+          ```
+
+          Signing and notarizing both require certificates this project does not have.
+
+          ## First run
+
+          The app offers a starter harvest. It indexes boundary **names** only —
+          geometry is fetched from the source when you export something, and cached.
           EOF
           )
 

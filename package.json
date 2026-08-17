@@ -20,6 +20,7 @@
     "test:watch": "vitest",
     "pack:win": "npm run build && electron-builder --win --dir",
     "dist:win": "npm run build && electron-builder --win",
+    "dist:mac": "npm run build && electron-builder --mac",
     "harvest": "electron-vite build && electron out/main/cli.js",
     "inspect": "node scripts/inspect-catalog.mjs",
     "icon": "node scripts/make-icon.mjs"

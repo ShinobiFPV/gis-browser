@@ -10,15 +10,10 @@ files:
   - out/**
   - package.json
   - '!**/*.map'
-  # better-sqlite3 ships a prebuilt N-API binary for every platform it supports -- eight
-  # of them, 16 MB, of which a Windows x64 build loads exactly one. There is no
-  # build/Release fallback in v13, so the remaining file is genuinely the one used;
-  # verified by running the installed app afterwards, not by reading the loader.
-  - '!**/node_modules/better-sqlite3/prebuilds/!(win32-x64).node'
 
 # better-sqlite3 is the only native module. Its .node binary cannot be loaded from inside
-# an asar, so it is unpacked beside it. Verified by running the packaged app, not assumed:
-# a broken unpack shows up as the window opening and then dying on the first query.
+# an asar, so it is unpacked beside it. Verified by running the packaged app on every
+# platform we ship, not assumed: a broken unpack builds cleanly and dies on the first query.
 asarUnpack:
   - '**/node_modules/better-sqlite3/**'
 
@@ -31,6 +26,11 @@ win:
       arch: [x64]
   icon: build/icon.ico
   artifactName: ${productName}-${version}-setup.${ext}
+  # better-sqlite3 ships a prebuilt N-API binary for all eight platforms it supports,
+  # 16 MB, of which this build loads exactly one. Scoped per platform -- a global
+  # exclusion here would strip the macOS binaries out of the macOS build.
+  files:
+    - '!**/node_modules/better-sqlite3/prebuilds/!(win32-x64).node'
 
 nsis:
   oneClick: false
@@ -45,3 +45,23 @@ nsis:
   # archives run to hundreds of megabytes. Uninstalling the application must not silently
   # destroy it -- someone reinstalling after a crash would otherwise re-download the lot.
   deleteAppDataOnUninstall: false
+
+mac:
+  target:
+    - target: dmg
+      arch: [arm64, x64]
+  icon: build/icon.icns
+  category: public.app-category.graphics-design
+  artifactName: ${productName}-${version}-${arch}.${ext}
+  # Unsigned and not notarized. Stated explicitly so electron-builder does not pick up an
+  # identity that happens to be in the runner's keychain and produce a build signed by
+  # something unexpected. See the README: Gatekeeper quarantines downloaded unsigned apps.
+  identity: null
+  notarize: false
+  # Both Darwin binaries are kept rather than one per arch. They are 1.9 MB each, and
+  # getting this wrong costs the app SQLite entirely on one architecture.
+  files:
+    - '!**/node_modules/better-sqlite3/prebuilds/!(darwin-arm64|darwin-x64).node'
+
+dmg:
+  artifactName: ${productName}-${version}-${arch}.${ext}
