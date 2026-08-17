@@ -102,11 +102,30 @@ Type a request in plain language. It is understood **without any network call**:
 **The top five are always shown, with map thumbnails. Nothing is ever auto-exported**,
 however confident the match.
 
-Adding an Anthropic API key layers Claude over both ends: it parses the request and
-re-ranks the candidates. Both are optional and both degrade independently — if the key is
-missing, rate-limited or the reply is malformed, the local resolver answers and the UI
-says so. **Geometry is never sent to the model**, only names, types, sources and a
-handful of attributes.
+Adding an API key layers a model over both ends: it parses the request and re-ranks the
+candidates. Both are optional and both degrade independently — if the key is missing, the
+provider is unreachable, rate-limited, or the reply is malformed, the local resolver
+answers and the UI says which provider failed and why. **Geometry is never sent to any
+model**, only names, types, sources and a handful of attributes.
+
+### Choosing a provider
+
+The model is a dropdown in Settings, not a build-time decision:
+
+| Provider | Notes |
+|---|---|
+| **Anthropic (Claude)** | Official SDK. What the app was built and tested against. |
+| **OpenAI** | Chat completions with a strict JSON Schema response format. |
+| **Google Gemini** | `generateContent`. The key travels in a header, never the URL. |
+| **OpenAI-compatible** | Any base URL you point it at — Ollama, LM Studio, vLLM, OpenRouter, Groq, Together, DeepSeek, xAI. |
+
+Keys are stored **one per provider**, each encrypted by the OS, so switching back and
+forth does not mean re-entering credentials. A model id can be typed in by hand for any
+provider; one that is not in the built-in list simply gets no optional parameters sent and
+is validated after the fact, because guessing a capability upward means sending a
+parameter the endpoint rejects.
+
+Local models need no key at all, which is the case the OpenAI-compatible option exists for.
 
 ## How export works
 
@@ -279,10 +298,14 @@ src/
 
 ### Security and key handling
 
-The Anthropic API key is entered in Settings, encrypted with Windows DPAPI via Electron's
-`safeStorage`, and stored outside the catalog. It never reaches the renderer, is never
-written to the database, and is never logged. Every Claude call originates in the main
-process.
+API keys are entered in Settings, encrypted via Electron''s `safeStorage` (DPAPI on
+Windows, Keychain on macOS), and stored outside the catalog, one file per provider. A key
+never reaches the renderer, is never written to the database, and is never logged. Every
+model call originates in the main process.
+
+Credentials travel in **headers, never URLs**. The HTTP client logs the URL of every
+request, so a provider whose examples put the key in a query string — Gemini''s do — would
+otherwise write it into a log file permanently.
 
 Harvested attribute values are third-party text that ends up in a prompt, so the ranking
 prompt marks the candidate list as data and instructs the model not to follow instructions

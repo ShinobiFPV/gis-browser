@@ -1,13 +1,15 @@
 import { getDb } from '@db/index';
 import type { SearchRequest, SearchResponse } from '@shared/ipc';
 import { resolve as resolveLocal } from '@resolve/resolve';
-import { LlmUnavailableError, SdkMessageClient, type MessageClient } from './anthropic';
+import { providerInfo } from '@shared/llm-providers';
+import { LlmUnavailableError, type MessageClient } from './llm-types';
+import { createClient } from './llm-clients';
 import { llmParse, llmRank } from './llm';
 import { hasKey } from './keychain';
 import { getSetting } from './settings';
 
 /**
- * The full search path: Claude parse -> local match -> Claude rank, with the local
+ * The full search path: model parse -> local match -> model rank, with the local
  * resolver underneath every step.
  *
  * The LLM is an enhancement, never a dependency. If the key is missing, the API is down,
@@ -17,11 +19,14 @@ import { getSetting } from './settings';
  * five minutes before air.
  */
 
-let client: MessageClient = new SdkMessageClient();
+/**
+ * Overrides the configured provider. Test seam only -- null means "build the client from
+ * settings", which is what every real run does.
+ */
+let clientOverride: MessageClient | null = null;
 
-/** Test seam. */
-export function setMessageClient(next: MessageClient): void {
-  client = next;
+export function setMessageClient(next: MessageClient | null): void {
+  clientOverride = next;
 }
 
 function attributesFor(featureId: number): Record<string, unknown> {
@@ -40,12 +45,20 @@ export async function runSearch(req: SearchRequest): Promise<SearchResponse> {
   const db = getDb();
   const notes: string[] = [];
   const limit = req.limit ?? 15;
-  const model = getSetting('anthropicModel');
+  const providerId = getSetting('llmProvider');
+  const provider = providerInfo(providerId);
+  const model = getSetting('llmModel');
 
-  const useLlm = req.useLlm && hasKey();
-  if (req.useLlm && !hasKey()) {
-    notes.push('Claude is switched on but no API key is stored; ran the local resolver instead.');
+  // A local runtime needs no key, so "configured" is not the same as "has a key".
+  const configured = !provider.keyRequired || hasKey(provider.id);
+  const useLlm = req.useLlm && configured;
+  if (req.useLlm && !configured) {
+    notes.push(
+      `${provider.label} is switched on but no API key is stored for it; ran the local resolver instead.`,
+    );
   }
+
+  const client = clientOverride ?? createClient({ providerId, baseUrl: getSetting('llmBaseUrl') });
 
   // --- 1. Parse -------------------------------------------------------------
   let parsedOverride: Awaited<ReturnType<typeof llmParse>>['parsed'] | undefined;
@@ -54,11 +67,11 @@ export async function runSearch(req: SearchRequest): Promise<SearchResponse> {
   if (useLlm) {
     const started = Date.now();
     try {
-      const r = await llmParse(client, model, req.prompt);
+      const r = await llmParse(client, providerId, model, req.prompt);
       parsedOverride = r.parsed;
       notes.push(...r.notes);
     } catch (err) {
-      notes.push(`Claude parse unavailable (${describe(err)}); used the keyword parser.`);
+      notes.push(`${provider.label} parse unavailable (${describe(err)}); used the keyword parser.`);
     }
     parseMs = Date.now() - started;
   }
@@ -79,9 +92,9 @@ export async function runSearch(req: SearchRequest): Promise<SearchResponse> {
   if (useLlm && candidates.length > 1) {
     const started = Date.now();
     try {
-      candidates = await llmRank(client, model, req.prompt, candidates, attributesFor);
+      candidates = await llmRank(client, providerId, model, req.prompt, candidates, attributesFor);
     } catch (err) {
-      notes.push(`Claude ranking unavailable (${describe(err)}); kept the local ranking.`);
+      notes.push(`${provider.label} ranking unavailable (${describe(err)}); kept the local ranking.`);
     }
     rankMs += Date.now() - started;
   }

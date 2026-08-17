@@ -13,10 +13,11 @@ import {
   RANK_JSON_SCHEMA,
   type RankCandidateView,
 } from '@resolve/llm-contract';
-import { LlmUnavailableError, modelInfo, type MessageClient } from './anthropic';
+import { modelInfo } from '@shared/llm-providers';
+import { LlmUnavailableError, type MessageClient } from './llm-types';
 
 /**
- * The Claude parse and rank passes.
+ * The parse and rank passes, against whichever provider is configured.
  *
  * Both are best-effort by construction: every failure path throws LlmUnavailableError and
  * the caller falls back to the local resolver. An artist on deadline must never be blocked
@@ -28,8 +29,13 @@ export interface LlmParseResult {
   notes: string[];
 }
 
-export async function llmParse(client: MessageClient, model: string, prompt: string): Promise<LlmParseResult> {
-  const info = modelInfo(model);
+export async function llmParse(
+  client: MessageClient,
+  provider: string,
+  model: string,
+  prompt: string,
+): Promise<LlmParseResult> {
+  const info = modelInfo(provider, model);
 
   const result = await client.send({
     model,
@@ -54,7 +60,7 @@ export async function llmParse(client: MessageClient, model: string, prompt: str
   const validated = parseResponseSchema.safeParse(raw);
   if (!validated.success) {
     throw new LlmUnavailableError(
-      `Claude's parse did not match the expected shape: ${validated.error.issues
+      `The model's parse did not match the expected shape: ${validated.error.issues
         .map((i) => `${i.path.join('.')} ${i.message}`)
         .slice(0, 3)
         .join('; ')}`,
@@ -64,12 +70,12 @@ export async function llmParse(client: MessageClient, model: string, prompt: str
 
   const coerced = coerceParse(validated.data);
   if (coerced.placeNames.length === 0) {
-    throw new LlmUnavailableError('Claude returned no usable place name.', 'bad-response');
+    throw new LlmUnavailableError('The model returned no usable place name.', 'bad-response');
   }
 
   const notes: string[] = [];
   if (coerced.discarded.length > 0) {
-    notes.push(`Claude returned values outside the taxonomy, ignored: ${coerced.discarded.join(', ')}`);
+    notes.push(`The model returned values outside the taxonomy, ignored: ${coerced.discarded.join(', ')}`);
   }
 
   return {
@@ -79,7 +85,7 @@ export async function llmParse(client: MessageClient, model: string, prompt: str
       jurisdictionHint: coerced.jurisdictionHint,
       vintageHint: coerced.vintageHint,
       wants: coerced.wants,
-      notes: coerced.notes || 'parsed by Claude',
+      notes: coerced.notes || 'parsed by the model',
       via: 'llm',
     },
     notes,
@@ -98,6 +104,7 @@ function rankUserMessage(prompt: string, view: RankCandidateView[]): string {
 
 export async function llmRank(
   client: MessageClient,
+  provider: string,
   model: string,
   prompt: string,
   candidates: Candidate[],
@@ -105,7 +112,7 @@ export async function llmRank(
 ): Promise<Candidate[]> {
   if (candidates.length === 0) return candidates;
 
-  const info = modelInfo(model);
+  const info = modelInfo(provider, model);
   const view = toRankView(candidates, attributesFor);
 
   const result = await client.send({
@@ -130,7 +137,7 @@ export async function llmRank(
 
   const validated = rankResponseSchema.safeParse(raw);
   if (!validated.success) {
-    throw new LlmUnavailableError("Claude's ranking did not match the expected shape.", 'bad-response');
+    throw new LlmUnavailableError("The model's ranking did not match the expected shape.", 'bad-response');
   }
 
   return applyRanking(candidates, validated.data);

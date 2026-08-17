@@ -4,6 +4,7 @@ import {
   type ExportProgress,
   type DiscoveryRunRequest,
   type ExportRequest,
+  type LlmConfigUpdate,
   type GisBridge,
   type LogLine,
   type SearchRequest,
@@ -18,9 +19,9 @@ import type { HarvestProgress, SourceRow } from '@shared/types';
  */
 const bridge: GisBridge = {
   settingsGet: () => ipcRenderer.invoke(CH.settingsGet),
-  keySet: (key: string) => ipcRenderer.invoke(CH.keySet, key),
-  keyClear: () => ipcRenderer.invoke(CH.keyClear),
-  modelSet: (id: string) => ipcRenderer.invoke(CH.modelSet, id),
+  keySet: (providerId: string, key: string) => ipcRenderer.invoke(CH.keySet, providerId, key),
+  keyClear: (providerId: string) => ipcRenderer.invoke(CH.keyClear, providerId),
+  llmConfigSet: (config: LlmConfigUpdate) => ipcRenderer.invoke(CH.llmConfigSet, config),
   sourcesList: () => ipcRenderer.invoke(CH.sourcesList),
   sourcesSetStatus: (id: number, status: SourceRow['status']) => ipcRenderer.invoke(CH.sourcesSetStatus, id, status),
   downloadsList: () => ipcRenderer.invoke(CH.downloadsList),

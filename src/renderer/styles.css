@@ -1041,3 +1041,25 @@ b.dim {
   border-bottom: 0;
   padding: 0 4px;
 }
+
+/* --- provider settings --- */
+
+.settings-provider select,
+.settings-model select,
+.settings-model input,
+.settings-baseurl input {
+  min-width: 180px;
+}
+
+.settings-baseurl {
+  flex: 1;
+  min-width: 200px;
+}
+
+.settings-strip a {
+  color: var(--accent);
+}
+
+.settings-row + .settings-row {
+  margin-top: 6px;
+}

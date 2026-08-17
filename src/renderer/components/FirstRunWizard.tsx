@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import type { FirstRunStatus, StarterPlan } from '@shared/ipc';
 import type { HarvestProgress } from '@shared/types';
+import { DEFAULT_PROVIDER, providerInfo } from '@shared/llm-providers';
 
 interface Props {
   status: FirstRunStatus;
@@ -36,7 +37,7 @@ export function FirstRunWizard({ status, progress, onDone }: Props): React.JSX.E
     // The key is optional and saved before the harvest starts, so a slow first harvest
     // does not hold it hostage. It goes straight to main and is never kept here.
     if (key.trim()) {
-      const res = await window.gis.keySet(key.trim());
+      const res = await window.gis.keySet(DEFAULT_PROVIDER, key.trim());
       setKey('');
       if (!res.ok) {
         setError(res.error ?? 'That key could not be stored.');
@@ -123,11 +124,11 @@ export function FirstRunWizard({ status, progress, onDone }: Props): React.JSX.E
 
             {!status.hasAnthropicKey && (
               <label className="field">
-                <span>Anthropic API key — optional</span>
+                <span>{providerInfo(DEFAULT_PROVIDER).label} API key — optional</span>
                 <input
                   type="password"
                   value={key}
-                  placeholder="sk-ant-…  leave blank to use the built-in parser"
+                  placeholder={`${providerInfo(DEFAULT_PROVIDER).keyHint}  leave blank to use the built-in parser`}
                   onChange={(e) => setKey(e.target.value)}
                   autoComplete="off"
                   spellCheck={false}
@@ -136,8 +137,8 @@ export function FirstRunWizard({ status, progress, onDone }: Props): React.JSX.E
             )}
             <div className="dim wizard-note">
               Search works without a key: names, a looser pass, then fuzzy matching, all locally.
-              A key adds Claude&apos;s parsing and ranking. It is encrypted by Windows and never
-              leaves your machine except to Anthropic.
+              A key adds model-assisted parsing and ranking. Other providers — OpenAI, Gemini, or a
+              local model — can be chosen later in Settings.
             </div>
 
             {error && <div className="warn-line error">{error}</div>}

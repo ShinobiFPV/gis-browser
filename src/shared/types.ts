@@ -160,23 +160,19 @@ export interface HarvestProgress {
   error?: string;
 }
 
-/** Capability summary for a selectable Claude model. Mirrors main/anthropic.ts. */
-export interface ModelChoice {
-  id: string;
-  label: string;
-  structuredOutputs: boolean;
-  effort: boolean;
-  adaptiveThinking: boolean;
-  note?: string;
-}
-
 export interface AppSettings {
-  /** Whether an Anthropic key is present. The key itself never leaves main. */
-  hasAnthropicKey: boolean;
   dbPath: string;
   dataDir: string;
-  anthropicModel: string;
-  models: ModelChoice[];
+  /** Selected provider id. See shared/llm-providers.ts for the catalog. */
+  llmProvider: string;
+  llmModel: string;
+  /** Only used by providers whose base URL is meant to be pointed somewhere. */
+  llmBaseUrl: string;
+  /**
+   * Which providers have a key stored — ids only. No key ever leaves main, not even
+   * masked: the renderer has no reason to hold one.
+   */
+  providersWithKeys: string[];
   /** Where exports are written. Changed in Settings, never asked for mid-export. */
   exportFolder: string;
 }

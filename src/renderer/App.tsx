@@ -7,6 +7,7 @@ import { PreviewPane } from './panes/PreviewPane';
 import { ExportPane } from './panes/ExportPane';
 import { SettingsStrip } from './components/SettingsStrip';
 import { FirstRunWizard } from './components/FirstRunWizard';
+import { providerInfo } from '@shared/llm-providers';
 
 export function App(): React.JSX.Element {
   const [settings, setSettings] = useState<AppSettings | null>(null);
@@ -115,9 +116,14 @@ export function App(): React.JSX.Element {
         <button
           className="titlebar-button"
           onClick={() => setShowSettings((v) => !v)}
-          title="API key and model"
+          title="LLM provider, key and model"
         >
-          Claude: <b>{settings?.hasAnthropicKey ? (settings.models.find((m) => m.id === settings.anthropicModel)?.label ?? 'key stored') : 'no key'}</b>
+          {settings ? providerInfo(settings.llmProvider).label.split(' ')[0] : 'LLM'}:{' '}
+          <b>
+            {settings && settings.providersWithKeys.includes(settings.llmProvider)
+              ? (settings.llmModel || 'no model')
+              : 'no key'}
+          </b>
         </button>
       </header>
 
@@ -138,7 +144,7 @@ export function App(): React.JSX.Element {
           marked={marked}
           onToggleMark={toggleMark}
           onSetMarks={setMarked}
-          hasKey={settings?.hasAnthropicKey ?? false}
+          hasKey={settings ? settings.providersWithKeys.includes(settings.llmProvider) : false}
           demoQuery={demoQuery}
         />
         <PreviewPane candidate={selected} onGeometry={setGeometry} />

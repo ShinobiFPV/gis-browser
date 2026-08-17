@@ -5,6 +5,7 @@ import {
   type BulkDownload,
   type DiscoveryRunRequest,
   type FirstRunStatus,
+  type LlmConfigUpdate,
   type ExportRequest,
   type ExportResult,
   type SearchRequest,
@@ -13,14 +14,14 @@ import {
 import type { AppSettings, SourceRow } from '@shared/types';
 import { getDb } from '@db/index';
 import { listSources, setSourceStatus } from '@db/queries';
-import { clearKey, hasKey, setKey } from './keychain';
+import { clearKey, providersWithKeys, setKey } from './keychain';
 import { cancelHarvest, startHarvest } from './harvester-host';
 import { getGeometry } from './geometry-service';
 import { runSearch } from './search-service';
 import { runExport } from './export-service';
 import { decideCandidate, listDiscovered, runDiscoveryJob } from './discovery-service';
 import { selectStarterSources, shouldShowWizard } from './first-run';
-import { MODELS } from './anthropic';
+import { isProviderId, LLM_PROVIDERS, providerInfo } from '@shared/llm-providers';
 import { getSetting, setSetting } from './settings';
 
 /**
@@ -30,21 +31,24 @@ import { getSetting, setSetting } from './settings';
  */
 export function registerIpc(win: BrowserWindow, ctx: { dbPath: string; dataDir: string }): void {
   ipcMain.handle(CH.settingsGet, (): AppSettings => ({
-    hasAnthropicKey: hasKey(),
     dbPath: ctx.dbPath,
     dataDir: ctx.dataDir,
-    anthropicModel: getSetting('anthropicModel'),
-    models: MODELS,
+    llmProvider: getSetting('llmProvider'),
+    llmModel: getSetting('llmModel'),
+    llmBaseUrl: getSetting('llmBaseUrl'),
+    providersWithKeys: providersWithKeys(LLM_PROVIDERS.map((p) => p.id)),
     exportFolder: getSetting('exportFolder'),
   }));
 
-  ipcMain.handle(CH.keySet, (_e, key: unknown) => {
+  ipcMain.handle(CH.keySet, (_e, providerId: unknown, key: unknown) => {
+    if (!isProviderId(providerId)) return { ok: false, error: 'Unknown provider' };
     if (typeof key !== 'string') return { ok: false, error: 'Key must be a string' };
-    return setKey(key);
+    return setKey(providerId, key);
   });
 
-  ipcMain.handle(CH.keyClear, () => {
-    clearKey();
+  ipcMain.handle(CH.keyClear, (_e, providerId: unknown) => {
+    if (!isProviderId(providerId)) return { ok: false };
+    clearKey(providerId);
     return { ok: true };
   });
 
@@ -126,7 +130,7 @@ export function registerIpc(win: BrowserWindow, ctx: { dbPath: string; dataDir: 
       sourceCount: sources.length,
       essentialCount: selectStarterSources(sources, 'essential').sourceIds.length,
       tierACount: selectStarterSources(sources, 'tier-a').sourceIds.length,
-      hasAnthropicKey: hasKey(),
+      hasAnthropicKey: providersWithKeys([getSetting('llmProvider')]).length > 0,
       exportFolder: getSetting('exportFolder'),
     };
   });
@@ -199,11 +203,36 @@ export function registerIpc(win: BrowserWindow, ctx: { dbPath: string; dataDir: 
     return runSearch(req);
   });
 
-  ipcMain.handle(CH.modelSet, (_e, id: unknown) => {
-    if (typeof id !== 'string' || !MODELS.some((m) => m.id === id)) {
-      return { ok: false, error: 'Unknown model' };
+  /**
+   * Changes which model answers.
+   *
+   * The model id is NOT checked against the built-in list. Providers ship new models
+   * constantly and the openai-compatible option exists precisely to reach ones this app
+   * has never heard of; rejecting an id because it is absent from a hardcoded table would
+   * make the feature useless the moment it went stale. A wrong id fails as a 404 on the
+   * next search, the search still returns local results, and the UI says which provider
+   * refused.
+   */
+  ipcMain.handle(CH.llmConfigSet, (_e, config: unknown) => {
+    if (!config || typeof config !== 'object') return { ok: false, error: 'Expected a config object' };
+    const { providerId, model, baseUrl } = config as LlmConfigUpdate;
+
+    if (providerId !== undefined) {
+      if (!isProviderId(providerId)) return { ok: false, error: `Unknown provider "${String(providerId)}"` };
+      setSetting('llmProvider', providerId);
+
+      // Switching provider invalidates the model, since ids do not carry across. Reset to
+      // that provider's first listed model rather than leaving a Claude id pointed at
+      // OpenAI, which would fail on every search until someone noticed.
+      const provider = providerInfo(providerId);
+      const current = getSetting('llmModel');
+      const stillValid = provider.models.some((m) => m.id === current);
+      if (!stillValid) setSetting('llmModel', provider.models[0]?.id ?? '');
     }
-    setSetting('anthropicModel', id);
+
+    if (typeof model === 'string') setSetting('llmModel', model.trim());
+    if (typeof baseUrl === 'string') setSetting('llmBaseUrl', baseUrl.trim());
+
     return { ok: true };
   });
 

@@ -1,7 +1,7 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { app } from 'electron';
-import { DEFAULT_MODEL, MODELS } from './anthropic';
+import { DEFAULT_MODEL, DEFAULT_PROVIDER, isProviderId } from '@shared/llm-providers';
 
 /**
  * Small preferences file beside the app data.
@@ -12,6 +12,16 @@ import { DEFAULT_MODEL, MODELS } from './anthropic';
  */
 
 export interface Preferences {
+  /** Which LLM provider is selected. See shared/llm-providers.ts. */
+  llmProvider: string;
+  /** Model id for that provider. Free text -- a provider will take one it does not list. */
+  llmModel: string;
+  /** Base URL, only used by providers whose endpoint is meant to be pointed somewhere. */
+  llmBaseUrl: string;
+  /**
+   * Kept so an install that predates provider switching does not lose its model choice.
+   * Read once at load, then carried in llmModel.
+   */
   anthropicModel: string;
   /**
    * Where exports land. Set once, then never asked about again -- the brief bans modal
@@ -35,7 +45,14 @@ function defaultExportFolder(): string {
   return join(app.getPath('documents'), 'GIS Browser Exports');
 }
 
-const DEFAULTS: Preferences = { anthropicModel: DEFAULT_MODEL, exportFolder: '', firstRunCompletedAt: null };
+const DEFAULTS: Preferences = {
+  llmProvider: DEFAULT_PROVIDER,
+  llmModel: DEFAULT_MODEL,
+  llmBaseUrl: '',
+  anthropicModel: DEFAULT_MODEL,
+  exportFolder: '',
+  firstRunCompletedAt: null,
+};
 
 let cache: Preferences | null = null;
 
@@ -53,10 +70,20 @@ function load(): Preferences {
   try {
     const raw = JSON.parse(readFileSync(path, 'utf8')) as Partial<Preferences>;
     cache = {
-      // An unknown model id would 404 on every request, so fall back rather than trust it.
-      anthropicModel: MODELS.some((m) => m.id === raw.anthropicModel)
-        ? raw.anthropicModel!
-        : DEFAULTS.anthropicModel,
+      llmProvider: isProviderId(raw.llmProvider) ? raw.llmProvider : DEFAULTS.llmProvider,
+      // Model ids are NOT validated against the built-in list. A provider will happily
+      // serve a model we have never heard of, and refusing one because it is not in a
+      // hardcoded table would make every new release of every provider unusable until
+      // this file caught up.
+      llmModel:
+        typeof raw.llmModel === 'string' && raw.llmModel.trim()
+          ? raw.llmModel.trim()
+          : // Carry a pre-multi-provider model choice forward rather than resetting it.
+            (typeof raw.anthropicModel === 'string' && raw.anthropicModel.trim()
+              ? raw.anthropicModel.trim()
+              : DEFAULTS.llmModel),
+      llmBaseUrl: typeof raw.llmBaseUrl === 'string' ? raw.llmBaseUrl : '',
+      anthropicModel: typeof raw.anthropicModel === 'string' ? raw.anthropicModel : DEFAULTS.anthropicModel,
       exportFolder:
         typeof raw.exportFolder === 'string' && raw.exportFolder.trim()
           ? raw.exportFolder

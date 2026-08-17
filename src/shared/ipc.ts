@@ -10,7 +10,7 @@ export const CH = {
   settingsGet: 'settings:get',
   keySet: 'key:set',
   keyClear: 'key:clear',
-  modelSet: 'model:set',
+  llmConfigSet: 'llm:configSet',
   sourcesList: 'sources:list',
   sourcesSetStatus: 'sources:setStatus',
   downloadsList: 'downloads:list',
@@ -78,6 +78,13 @@ export interface GeometryResult {
    * this is a provenance fact about what we were able to retrieve.
    */
   generalisationDeg: number | null;
+}
+
+/** A change to which model answers, from the Settings strip. */
+export interface LlmConfigUpdate {
+  providerId?: string;
+  model?: string;
+  baseUrl?: string;
 }
 
 export type StarterPlan = 'essential' | 'tier-a' | 'skip';
@@ -198,9 +205,9 @@ export interface LogLine {
 /** Shape the preload bridge puts on `window.gis`. */
 export interface GisBridge {
   settingsGet(): Promise<AppSettings>;
-  keySet(key: string): Promise<{ ok: boolean; error?: string }>;
-  keyClear(): Promise<{ ok: boolean }>;
-  modelSet(id: string): Promise<{ ok: boolean; error?: string }>;
+  keySet(providerId: string, key: string): Promise<{ ok: boolean; error?: string }>;
+  keyClear(providerId: string): Promise<{ ok: boolean }>;
+  llmConfigSet(config: LlmConfigUpdate): Promise<{ ok: boolean; error?: string }>;
   sourcesList(): Promise<SourceRow[]>;
   sourcesSetStatus(id: number, status: SourceRow['status']): Promise<void>;
   downloadsList(): Promise<BulkDownload[]>;

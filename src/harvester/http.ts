@@ -218,6 +218,89 @@ export class HttpClient {
   }
 
   /**
+   * POSTs JSON and returns the raw response text, for the LLM providers that are not
+   * reached through an SDK.
+   *
+   * Kept here so those calls inherit the same timeout, retry policy, per-host concurrency
+   * cap and log line as everything else. Two rules matter more than usual on this path:
+   *
+   *   - Credentials go in HEADERS, never in the URL. The log line contains the URL, and a
+   *     provider that wants its key as a query parameter would otherwise write it into a
+   *     log file forever.
+   *   - Neither the request body nor the response body is ever logged. The request body
+   *     carries the user's prompt; only an error excerpt is surfaced, by the caller.
+   */
+  async postJson(
+    url: string,
+    body: unknown,
+    opts: { headers?: Record<string, string>; timeoutMs?: number } = {},
+  ): Promise<{ ok: boolean; status: number; text: string }> {
+    const timeoutMs = opts.timeoutMs ?? this.timeoutMs;
+    const limiter = this.limiterFor(url);
+    await limiter.acquire();
+
+    try {
+      let lastStatus = 0;
+      let lastBody = '';
+
+      for (let attempt = 1; attempt <= this.maxAttempts; attempt++) {
+        if (this.cancelled) throw new Error(`cancelled before completing ${url}`);
+
+        const started = Date.now();
+        const controller = new AbortController();
+        const timer = setTimeout(() => controller.abort(), timeoutMs);
+
+        try {
+          const res = await this.fetchImpl(url, {
+            method: 'POST',
+            signal: controller.signal,
+            redirect: 'follow',
+            headers: {
+              'User-Agent': this.userAgent,
+              'Content-Type': 'application/json',
+              Accept: 'application/json',
+              ...opts.headers,
+            },
+            body: JSON.stringify(body),
+          });
+
+          const text = await res.text();
+          const ms = Date.now() - started;
+          // Status and timing only. No headers, no bodies.
+          this.log(res.ok ? 'debug' : 'warn', `POST ${res.status} ${ms}ms ${url}`);
+
+          if (res.ok) return { ok: true, status: res.status, text };
+
+          lastStatus = res.status;
+          lastBody = text;
+
+          if (!RETRYABLE_STATUS.has(res.status) || attempt === this.maxAttempts) {
+            return { ok: false, status: res.status, text };
+          }
+          await this.sleep(this.backoffMs(attempt, res.headers.get('retry-after')));
+        } catch (err) {
+          clearTimeout(timer);
+
+          const message = err instanceof Error ? err.message : String(err);
+          const aborted = err instanceof Error && err.name === 'AbortError';
+          this.log('warn', `POST ${aborted ? `timeout after ${timeoutMs}ms` : `transport error: ${message}`} ${url}`);
+
+          if (attempt === this.maxAttempts) {
+            throw new HttpError(0, url, aborted ? `timed out after ${timeoutMs}ms` : message, attempt);
+          }
+          await this.sleep(this.backoffMs(attempt, null));
+        } finally {
+          clearTimeout(timer);
+        }
+      }
+
+      return { ok: false, status: lastStatus, text: lastBody };
+    } finally {
+      limiter.release();
+    }
+  }
+
+  /**
    * Streams a URL to disk, for Tier B bulk archives.
    *
    * Separate from attemptLoop because the assumptions are different in three ways:

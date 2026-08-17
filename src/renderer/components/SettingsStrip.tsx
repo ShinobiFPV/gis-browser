@@ -1,11 +1,15 @@
 import { useState } from 'react';
 import type { AppSettings } from '@shared/types';
+import { LLM_PROVIDERS, modelInfo, providerInfo } from '@shared/llm-providers';
 
 interface Props {
   settings: AppSettings;
   onChanged: () => Promise<void>;
   onClose: () => void;
 }
+
+/** Sentinel for the "type the model id yourself" option in the model dropdown. */
+const CUSTOM = '__custom__';
 
 /**
  * Settings as an inline strip rather than a dialog.
@@ -19,46 +23,119 @@ export function SettingsStrip({ settings, onChanged, onClose }: Props): React.JS
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
 
-  const model = settings.models.find((m) => m.id === settings.anthropicModel);
+  const provider = providerInfo(settings.llmProvider);
+  const model = modelInfo(provider.id, settings.llmModel);
+  const hasKey = settings.providersWithKeys.includes(provider.id);
+  const listed = provider.models.some((m) => m.id === settings.llmModel);
+  // A provider with no built-in list is always in custom mode; so is a hand-typed id.
+  const [customModel, setCustomModel] = useState(!listed);
 
-  async function saveKey(): Promise<void> {
-    if (!key.trim()) return;
+  async function run(fn: () => Promise<void>): Promise<void> {
     setBusy(true);
-    const res = await window.gis.keySet(key);
-    // Clear the field immediately either way — the key should not sit in renderer state
-    // any longer than the moment it takes to hand it to main.
-    setKey('');
-    setMessage(res.ok ? 'Key stored, encrypted by Windows.' : (res.error ?? 'Could not store the key.'));
-    await onChanged();
-    setBusy(false);
+    try {
+      await fn();
+      await onChanged();
+    } finally {
+      setBusy(false);
+    }
   }
 
-  async function clearKey(): Promise<void> {
-    setBusy(true);
-    await window.gis.keyClear();
-    setMessage('Key removed.');
-    await onChanged();
-    setBusy(false);
-  }
+  const saveKey = (): Promise<void> =>
+    run(async () => {
+      if (!key.trim()) return;
+      const res = await window.gis.keySet(provider.id, key);
+      // Cleared immediately either way — the key should not sit in renderer state any
+      // longer than the moment it takes to hand it to main.
+      setKey('');
+      setMessage(res.ok ? `Key stored for ${provider.label}, encrypted by the OS.` : (res.error ?? 'Could not store the key.'));
+    });
 
-  async function chooseModel(id: string): Promise<void> {
-    setBusy(true);
-    const res = await window.gis.modelSet(id);
-    if (!res.ok) setMessage(res.error ?? 'Could not change the model.');
-    await onChanged();
-    setBusy(false);
-  }
+  const clearKey = (): Promise<void> =>
+    run(async () => {
+      await window.gis.keyClear(provider.id);
+      setMessage(`Key removed for ${provider.label}.`);
+    });
+
+  const chooseProvider = (id: string): Promise<void> =>
+    run(async () => {
+      const res = await window.gis.llmConfigSet({ providerId: id });
+      setMessage(res.ok ? null : (res.error ?? 'Could not change provider.'));
+      setCustomModel(providerInfo(id).models.length === 0);
+    });
+
+  const chooseModel = (value: string): Promise<void> =>
+    run(async () => {
+      if (value === CUSTOM) {
+        setCustomModel(true);
+        return;
+      }
+      setCustomModel(false);
+      const res = await window.gis.llmConfigSet({ model: value });
+      setMessage(res.ok ? null : (res.error ?? 'Could not change model.'));
+    });
+
+  const commit = (patch: { model?: string; baseUrl?: string }): Promise<void> =>
+    run(async () => {
+      const res = await window.gis.llmConfigSet(patch);
+      setMessage(res.ok ? null : (res.error ?? 'Could not save that.'));
+    });
 
   return (
     <div className="settings-strip" onKeyDown={(e) => e.key === 'Escape' && onClose()}>
       <div className="settings-row">
+        <label className="field settings-provider">
+          <span>Provider</span>
+          <select value={provider.id} disabled={busy} onChange={(e) => void chooseProvider(e.target.value)}>
+            {LLM_PROVIDERS.map((p) => (
+              <option key={p.id} value={p.id}>
+                {p.label}
+                {settings.providersWithKeys.includes(p.id) ? ' ✓' : ''}
+              </option>
+            ))}
+          </select>
+        </label>
+
+        <label className="field settings-model">
+          <span>Model</span>
+          {customModel || provider.models.length === 0 ? (
+            <input
+              type="text"
+              placeholder="model id, e.g. llama3.1:8b"
+              defaultValue={settings.llmModel}
+              disabled={busy}
+              onBlur={(e) => void commit({ model: e.target.value })}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') (e.target as HTMLInputElement).blur();
+              }}
+            />
+          ) : (
+            <select value={settings.llmModel} disabled={busy} onChange={(e) => void chooseModel(e.target.value)}>
+              {provider.models.map((m) => (
+                <option key={m.id} value={m.id}>
+                  {m.label} — {m.id}
+                </option>
+              ))}
+              <option value={CUSTOM}>Something else…</option>
+            </select>
+          )}
+        </label>
+
+        <span className="spacer" />
+        <button onClick={onClose}>Close</button>
+      </div>
+
+      <div className="settings-row">
         <label className="field settings-key">
-          <span>Anthropic API key</span>
+          <span>
+            {provider.label} API key
+            {!provider.keyRequired && <span className="dim"> — optional for this one</span>}
+          </span>
           <input
             type="password"
             autoFocus
-            placeholder={settings.hasAnthropicKey ? '•••••••• stored' : 'sk-ant-…'}
+            placeholder={hasKey ? '•••••••• stored' : provider.keyHint}
             value={key}
+            disabled={busy}
             onChange={(e) => setKey(e.target.value)}
             onKeyDown={(e) => {
               if (e.key === 'Enter') void saveKey();
@@ -69,28 +146,44 @@ export function SettingsStrip({ settings, onChanged, onClose }: Props): React.JS
         <button className="primary" disabled={busy || !key.trim()} onClick={() => void saveKey()}>
           Save
         </button>
-        <button disabled={busy || !settings.hasAnthropicKey} onClick={() => void clearKey()}>
+        <button disabled={busy || !hasKey} onClick={() => void clearKey()}>
           Clear
         </button>
 
-        <label className="field settings-model">
-          <span>Model</span>
-          <select value={settings.anthropicModel} disabled={busy} onChange={(e) => void chooseModel(e.target.value)}>
-            {settings.models.map((m) => (
-              <option key={m.id} value={m.id}>
-                {m.label} — {m.id}
-              </option>
-            ))}
-          </select>
-        </label>
-
-        <span className="spacer" />
-        <button onClick={onClose}>Close</button>
+        {/* Only where pointing it somewhere else is the entire purpose. */}
+        {provider.baseUrlEditable && (
+          <label className="field settings-baseurl">
+            <span>Base URL</span>
+            <input
+              type="text"
+              placeholder={provider.defaultBaseUrl}
+              defaultValue={settings.llmBaseUrl}
+              disabled={busy}
+              onBlur={(e) => void commit({ baseUrl: e.target.value })}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') (e.target as HTMLInputElement).blur();
+              }}
+            />
+          </label>
+        )}
       </div>
 
       <div className="settings-note">
-        {model?.note}
-        {model && !model.structuredOutputs && (
+        {provider.note}
+        {provider.keyUrl && (
+          <>
+            {' '}
+            <a href={provider.keyUrl} target="_blank" rel="noreferrer">
+              Get a key
+            </a>
+            .
+          </>
+        )}
+      </div>
+
+      <div className="settings-note">
+        {model.note}
+        {!model.structuredOutputs && (
           <span className="warn">
             {' '}
             This model cannot be schema-constrained, so a malformed reply falls back to the local parser.
@@ -99,9 +192,11 @@ export function SettingsStrip({ settings, onChanged, onClose }: Props): React.JS
       </div>
 
       <div className="settings-note">
-        The key is encrypted with Windows DPAPI and stored outside the catalog database. It is never sent to
-        the renderer, never written to the catalog, and never logged. All Claude calls are made from the main
-        process. {message && <b>{message}</b>}
+        Keys are encrypted by the OS and stored outside the catalog database, one per provider, so switching
+        back does not mean re-entering anything. A key is never sent to the renderer, never written to the
+        catalog, and never logged. All model calls are made from the main process, and{' '}
+        <b>boundary geometry is never sent to any of them</b> — only names, types and sources.{' '}
+        {message && <b>{message}</b>}
       </div>
     </div>
   );
