@@ -280,6 +280,34 @@ export function dropDistantParts(geometry: Geometry): { geometry: Geometry | nul
   };
 }
 
+/**
+ * Strips DBF padding out of attribute values.
+ *
+ * The dBase format stores text in fixed-width fields. Most publishers pad with spaces,
+ * which the reader trims, but some pad with NUL and those bytes come straight through:
+ * Natural Earth's rivers give "Athabasca" followed by twenty U+0000, a 29-character
+ * string. Left alone it becomes the official name, the search alias, and a run of
+ * replacement boxes in the UI -- and it is written verbatim into an exported GeoJSON that
+ * goes to air. Cleaned here, at the boundary, so nothing downstream has to know.
+ */
+export function cleanAttributes(raw: Record<string, unknown>): Record<string, unknown> {
+  const out: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(raw)) {
+    if (typeof value !== 'string') {
+      out[key] = value;
+      continue;
+    }
+    // C0 controls, then surrounding whitespace. An empty result becomes null rather than
+    // an empty string, so pickOfficialName treats it as absent and falls to the next field.
+    // Matching control characters is the entire point here: they ARE the padding being
+    // removed, so the rule that normally flags them does not apply.
+    // eslint-disable-next-line no-control-regex
+    const cleaned = value.replace(/[\u0000-\u001F\u007F]+/g, ' ').trim();
+    out[key] = cleaned === '' ? null : cleaned;
+  }
+  return out;
+}
+
 function countVertices(geometry: Geometry): number {
   let n = 0;
   const visit = (c: unknown): void => {
@@ -395,7 +423,7 @@ export async function* readLayer(opts: ReadOptions): AsyncGenerator<BulkRow[]> {
         // Shapefiles have no stable identifier of their own, so the record index is used.
         // Ingest overrides this with identity_field when the source declares one.
         sourceFeatureId: String(index),
-        attributes: feature.properties ?? {},
+        attributes: cleanAttributes(feature.properties ?? {}),
         bbox,
         geometry,
         vertexCount: countVertices(geometry),

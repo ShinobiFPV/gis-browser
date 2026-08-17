@@ -91,6 +91,8 @@ function createWindow(dbPath: string, dataDir: string): BrowserWindow {
     const demo = process.env['GIS_DEMO'];
     if (demo) params.set('demo', demo);
     if (process.env['GIS_SETTINGS']) params.set('settings', '1');
+    // Opens the collapsed discovery section, so a screenshot can show it without a click.
+    if (process.env['GIS_DISCOVERY']) params.set('discovery', '1');
 
     const query = params.toString();
     void w.loadURL(query ? `${devUrl}${devUrl.includes('?') ? '&' : '?'}${query}` : devUrl);

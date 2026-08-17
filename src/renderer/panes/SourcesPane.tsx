@@ -24,7 +24,10 @@ export function SourcesPane({ sources, progress, onRefresh, busy }: Props): Reac
   const [downloads, setDownloads] = useState<BulkDownload[]>([]);
   const [showDownloads, setShowDownloads] = useState(false);
 
-  const [showDiscovery, setShowDiscovery] = useState(false);
+  // Dev harness only; see main/index.ts. A packaged build uses loadFile and has no query.
+  const [showDiscovery, setShowDiscovery] = useState(
+    new URLSearchParams(location.search).has('discovery'),
+  );
   const [candidates, setCandidates] = useState<DiscoveredRow[]>([]);
   const [query, setQuery] = useState('');
   const [crawling, setCrawling] = useState(false);

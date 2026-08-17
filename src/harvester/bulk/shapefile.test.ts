@@ -4,6 +4,7 @@ import { join } from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import {
   decideCrs,
+  cleanAttributes,
   discoverLayers,
   dropDistantParts,
   readEncoding,
@@ -119,6 +120,39 @@ describe('readEncoding', () => {
     expect(readEncoding(null)).toEqual({ encoding: 'utf-8', declared: false });
     expect(readEncoding(write('empty.cpg', '   '))).toEqual({ encoding: 'utf-8', declared: false });
     expect(readEncoding(join(dir, 'missing.cpg'))).toEqual({ encoding: 'utf-8', declared: false });
+  });
+});
+
+describe('cleanAttributes', () => {
+  it('strips the NUL padding dBase leaves on fixed-width text fields', () => {
+    // Natural Earth's rivers pad with NUL rather than spaces, so the reader hands back
+    // "Athabasca" followed by twenty U+0000 -- a 29-character name that renders as a run
+    // of replacement boxes and gets written into exported files verbatim.
+    const padded = 'Athabasca' + '\u0000'.repeat(20);
+    expect(padded).toHaveLength(29);
+    expect(cleanAttributes({ name: padded })['name']).toBe('Athabasca');
+  });
+
+  it('strips control characters wherever they appear, not only at the end', () => {
+    expect(cleanAttributes({ n: 'River\u0000\u0000\u0000Centerline' })['n']).toBe('River Centerline');
+    expect(cleanAttributes({ n: 'Lake' })['n']).toBe('Lake');
+  });
+
+  it('leaves non-string values alone', () => {
+    const out = cleanAttributes({ scalerank: 5, ok: true, missing: null, nested: { a: 1 } });
+    expect(out['scalerank']).toBe(5);
+    expect(out['ok']).toBe(true);
+    expect(out['missing']).toBeNull();
+    expect(out['nested']).toEqual({ a: 1 });
+  });
+
+  it('turns an all-padding field into null so the next name field is tried', () => {
+    expect(cleanAttributes({ name: '\u0000\u0000\u0000' })['name']).toBeNull();
+    expect(cleanAttributes({ name: '   ' })['name']).toBeNull();
+  });
+
+  it('does not touch accented text', () => {
+    expect(cleanAttributes({ n: 'Rivière-du-Loup' })['n']).toBe('Rivière-du-Loup');
   });
 });
 

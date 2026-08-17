@@ -1021,3 +1021,23 @@ b.dim {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+
+/* --- inline link buttons --- */
+
+/*
+ * .link-button was written for the full-width "show N more" control in the search pane,
+ * so it is display:block / width:100%. Every later use puts it inside a flex row next to
+ * other content, where those two properties make it stretch and squeeze its siblings to
+ * nothing -- the discovery candidate titles vanished entirely. Inline usages opt out.
+ */
+.candidate-head .link-button,
+.download-row .link-button,
+.wizard-head .link-button,
+.folder-line .link-button,
+.done-line .link-button,
+.field span .link-button {
+  display: inline;
+  width: auto;
+  border-bottom: 0;
+  padding: 0 4px;
+}
