@@ -103,8 +103,59 @@ function createWindow(dbPath: string, dataDir: string): BrowserWindow {
   return w;
 }
 
+/**
+ * Headless health check for a PACKAGED build: `"GIS Browser.exe" --smoke`.
+ *
+ * Opens the catalog, runs every migration, seeds the registry, prints a summary and
+ * exits without ever creating a window. It exists because the one thing packaging can
+ * silently break is the native module: better-sqlite3 has to be unpacked from the asar
+ * to be loadable, and a broken unpack builds perfectly, installs perfectly, and then
+ * dies on the first query. Nothing short of running the packaged binary catches it.
+ *
+ * The CLI cannot serve this purpose. It is a separate entry point reached by passing a
+ * script path to Electron, which a packaged app does not accept.
+ */
+function runSmokeTest(dbPath: string): number {
+  console.log(`[smoke] opening ${dbPath}`);
+  const db = openDb(dbPath);
+
+  const sources = (db.prepare('SELECT COUNT(*) n FROM sources').get() as { n: number }).n;
+  const tierB = (db.prepare("SELECT COUNT(*) n FROM sources WHERE tier = 'B'").get() as { n: number }).n;
+  const version = db.pragma('user_version', { simple: true }) as number;
+
+  console.log(`[smoke] schema version ${version}`);
+  console.log(`[smoke] ${sources} sources seeded (${tierB} tier B)`);
+  console.log(`[smoke] electron ${process.versions.electron}, node ${process.versions.node}`);
+
+  if (sources === 0) {
+    console.error('[smoke] FAILED: the registry seeded no sources');
+    return 1;
+  }
+  if (version < 1) {
+    console.error('[smoke] FAILED: no migration ran');
+    return 1;
+  }
+
+  console.log('[smoke] ok');
+  return 0;
+}
+
 void app.whenReady().then(() => {
   const { dbPath, dataDir } = paths();
+
+  if (process.argv.includes('--smoke')) {
+    let code = 1;
+    try {
+      code = runSmokeTest(dbPath);
+    } catch (err) {
+      console.error(`[smoke] FAILED: ${err instanceof Error ? err.stack : String(err)}`);
+    } finally {
+      closeDb();
+    }
+    app.exit(code);
+    return;
+  }
+
   console.log(`[main] ready; opening ${dbPath}`);
   openDb(dbPath);
   console.log('[main] database open; creating window');

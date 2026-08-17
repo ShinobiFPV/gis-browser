@@ -1,5 +1,8 @@
 # GIS Browser
 
+[![Build](https://github.com/ShinobiFPV/gis-browser/actions/workflows/build.yml/badge.svg)](https://github.com/ShinobiFPV/gis-browser/actions/workflows/build.yml)
+[![Licence: MIT](https://img.shields.io/badge/licence-MIT-blue.svg)](LICENSE)
+
 Ask for a Canadian boundary in plain language. Get back a clean GeoJSON or SVG outline
 from official open data, with its source, licence and vintage attached.
 
@@ -154,7 +157,23 @@ npm test             # 415 tests
 npm run typecheck    # strict TypeScript, both tsconfigs
 npm run lint         # eslint, zero warnings allowed
 npm run dist:win     # NSIS installer into release/
+npm run icon         # regenerate build/icon.ico (pure Node, no image toolchain)
 ```
+
+### Continuous integration
+
+[`.github/workflows/build.yml`](.github/workflows/build.yml) runs typecheck, lint and the
+full test suite on Linux, then builds the Windows installer and **smoke-tests the packaged
+binary** — `GIS Browser.exe --smoke` opens the catalog, runs every migration, seeds the
+registry and exits.
+
+That last step is the one that matters. Packaging can silently break exactly one thing:
+better-sqlite3 is a native module and has to be unpacked from the asar to load. A broken
+unpack builds cleanly, installs cleanly, and then dies on the first query. Running the
+packaged binary is the only way to catch it.
+
+Every push to `main` uploads an installer artefact. Pushing a `v*` tag publishes a
+release.
 
 ### Headless CLI
 

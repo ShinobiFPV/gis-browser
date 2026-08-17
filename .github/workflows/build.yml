@@ -1,0 +1,156 @@
+name: Build
+
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+  pull_request:
+    branches: [main]
+  # So an installer can be produced without pushing anything.
+  workflow_dispatch:
+
+concurrency:
+  # A newer push to the same branch supersedes an in-flight run. Tag builds are never
+  # cancelled -- those produce release artefacts.
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ !startsWith(github.ref, 'refs/tags/') }}
+
+permissions:
+  contents: read
+
+jobs:
+  # Fast gate. Runs on Linux because none of it needs Windows, and it fails in about a
+  # minute rather than after an Electron download.
+  check:
+    name: Typecheck, lint, test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      # --ignore-scripts skips the postinstall rebuild, which exists only to match
+      # better-sqlite3 to Electron's ABI. Safe here: the package declares no install
+      # script and ships prebuilt binaries for every platform in its own tarball, so it
+      # loads under plain Node. The tests that use SQLite genuinely open one.
+      - name: Install
+        run: npm ci --ignore-scripts
+
+      - run: npm run typecheck
+      - run: npm run lint
+      - run: npm test
+
+  build:
+    name: Windows installer
+    needs: check
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      # Electron is ~100 MB and is fetched twice over -- once by the native rebuild and
+      # once by packaging. Keyed on the lockfile so a version bump misses the cache
+      # rather than reusing a stale binary.
+      - name: Cache Electron downloads
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~\AppData\Local\electron\Cache
+            ~\AppData\Local\electron-builder\Cache
+          key: electron-${{ runner.os }}-${{ hashFiles('package-lock.json') }}
+          restore-keys: electron-${{ runner.os }}-
+
+      # Full install here: postinstall runs electron-builder install-app-deps, which is
+      # what makes better-sqlite3 loadable from the packaged app.
+      - name: Install
+        run: npm ci
+
+      - name: Build installer
+        run: npm run dist:win
+        env:
+          # There is no code-signing certificate. Stated explicitly so electron-builder
+          # does not go hunting for one on a runner that happens to have any.
+          CSC_IDENTITY_AUTO_DISCOVERY: false
+
+      # Packaging can break exactly one thing silently: better-sqlite3 is native and has
+      # to be unpacked from the asar to load. A broken unpack builds, installs and then
+      # dies on the first query. Running the packaged binary is the only way to know.
+      - name: Smoke-test the packaged app
+        shell: pwsh
+        run: |
+          $exe = "release\win-unpacked\GIS Browser.exe"
+          if (-not (Test-Path -LiteralPath $exe)) { throw "packaged app not found at $exe" }
+
+          $unpacked = "release\win-unpacked\resources\app.asar.unpacked\node_modules\better-sqlite3"
+          if (-not (Test-Path -LiteralPath $unpacked)) { throw "better-sqlite3 was not unpacked from the asar" }
+
+          # Exactly one, because the builder config drops the seven prebuilds for other
+          # platforms. If that filter ever over-matches, the app loses SQLite entirely.
+          $binaries = @(Get-ChildItem -LiteralPath $unpacked -Recurse -Filter *.node)
+          if ($binaries.Count -ne 1) {
+            throw "expected 1 native binary, found $($binaries.Count): $($binaries.Name -join ', ')"
+          }
+          Write-Host "native binary: $($binaries[0].Name)"
+
+          # Opens the catalog, runs every migration, seeds the registry, exits.
+          $out = & $exe --smoke 2>&1 | Out-String
+          Write-Host $out
+          if ($LASTEXITCODE -ne 0) { throw "packaged app exited $LASTEXITCODE" }
+          if ($out -notmatch '\[smoke\] ok') { throw "smoke test did not report success" }
+
+      - name: Upload installer
+        uses: actions/upload-artifact@v4
+        with:
+          name: gis-browser-setup
+          path: |
+            release/*.exe
+            release/*.blockmap
+          if-no-files-found: error
+          retention-days: 30
+
+  release:
+    name: Publish release
+    # Tags only. A push to main produces a downloadable artefact, not a release.
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: gis-browser-setup
+          path: dist
+
+      # gh is preinstalled on the runner, so this needs no third-party action holding a
+      # contents:write token.
+      - name: Create release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          # --notes is the documented way to prepend text to --generate-notes output.
+          NOTES=$(cat <<'EOF'
+          Windows x64 installer.
+
+          **This installer is unsigned.** SmartScreen will warn on first run until it
+          builds reputation — choose *More info → Run anyway*.
+
+          On first launch the app offers a starter harvest. It indexes boundary names
+          only; geometry is fetched when you export something.
+          EOF
+          )
+
+          # --repo is required: this job does not check the repository out, so gh has no
+          # git remote to infer it from.
+          gh release create "${GITHUB_REF_NAME}" dist/* \
+            --repo "${GITHUB_REPOSITORY}" \
+            --title "${GITHUB_REF_NAME}" \
+            --generate-notes \
+            --notes "${NOTES}"
