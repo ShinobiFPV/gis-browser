@@ -177,7 +177,12 @@ export async function runBulk(
     }
     cb.log('info', `${source.name}: reading "${set.layer}" as ${crs.description}`);
 
-    const ingestor = createIngestor(db, source, { namelessRows: 'skip', bboxPolicy: 'intersects' });
+    // A world source has no Canadian envelope to check a bbox against; 'any' says so
+    // rather than silently nulling every bbox outside Canada.
+    const ingestor = createIngestor(db, source, {
+      namelessRows: 'skip',
+      bboxPolicy: source.region === 'world' ? 'any' : 'intersects',
+    });
     const readStats = emptyReadStats();
     // Every row ingest touches gets retrieved_at = now, so anything still carrying an
     // older stamp when the file has been read end to end was not in it. See the sweep below.
@@ -190,6 +195,7 @@ export async function runBulk(
       set,
       crs,
       encoding,
+      region: source.region,
       stats: readStats,
       onProgress: (n) => {
         cb.onPhase({

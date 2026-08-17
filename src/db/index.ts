@@ -78,11 +78,11 @@ export function seedSources(db: Db): { inserted: number; updated: number } {
     INSERT INTO sources (
       name, kind, tier, endpoint, layer_id, feature_type, jurisdiction, vintage,
       licence, attribution, name_fields, status, source_srid, verified_count, verified_at, notes,
-      identity_field, archive_bytes
+      identity_field, archive_bytes, region
     ) VALUES (
       @name, @kind, @tier, @endpoint, @layer_id, @feature_type, @jurisdiction, @vintage,
       @licence, @attribution, @name_fields, 'seeded', @source_srid, @verified_count, @verified_at, @notes,
-      @identity_field, @archive_bytes
+      @identity_field, @archive_bytes, @region
     )
     ON CONFLICT(endpoint, layer_id, feature_type) DO UPDATE SET
       name           = excluded.name,
@@ -98,7 +98,8 @@ export function seedSources(db: Db): { inserted: number; updated: number } {
       verified_at    = excluded.verified_at,
       notes          = excluded.notes,
       identity_field = excluded.identity_field,
-      archive_bytes  = excluded.archive_bytes
+      archive_bytes  = excluded.archive_bytes,
+      region         = excluded.region
       -- status, last_harvested_at and feature_count are deliberately not touched.
   `);
 
@@ -129,6 +130,9 @@ export function seedSources(db: Db): { inserted: number; updated: number } {
         notes: s.notes ?? null,
         identity_field: s.identityField ?? null,
         archive_bytes: s.archiveBytes ?? null,
+        // Canadian unless the source says otherwise, which is what every seeded source
+        // was before the catalog went international.
+        region: s.region ?? 'canada',
       });
       if (already) updated++;
       else inserted++;

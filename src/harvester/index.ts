@@ -105,6 +105,7 @@ async function run(dbPath: string, sourceIds: number[]): Promise<void> {
 
       const { stats } = result;
       const features = stats.featuresWritten;
+      // Also refreshes the jurisdiction registry for country and state layers.
       recordHarvestResult(db, id, { featureCount: features, status: 'ok' });
 
       const merged = stats.featuresMerged > 0 ? `, ${stats.featuresMerged} multipart rows merged` : '';

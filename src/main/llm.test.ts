@@ -60,7 +60,8 @@ describe('llmParse', () => {
     expect(r.parsed.via).toBe('llm');
     expect(r.parsed.placeNames).toEqual(['Parry Island First Nation', 'Parry Island']);
     expect(r.parsed.featureTypeHint).toBe('indian_reserve');
-    expect(r.parsed.jurisdictionHint).toBe('ON');
+    // 'ON' is model shorthand; it resolves to the prefixed code the catalog uses.
+    expect(r.parsed.jurisdictionHint).toBe('CA-ON');
   });
 
   it('sends a JSON schema only to a model that can be schema-constrained', async () => {

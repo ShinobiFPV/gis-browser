@@ -1,4 +1,5 @@
-import { isJurisdiction, type FeatureType, type Jurisdiction } from '@shared/taxonomy';
+import { type FeatureType, type Jurisdiction } from '@shared/taxonomy';
+import { LEGACY_CANADIAN_CODES } from '@shared/jurisdictions';
 import { normalizeText } from '../harvester/normalize/aliases';
 
 /**
@@ -99,20 +100,20 @@ const TYPE_ABBREVIATIONS: [string, FeatureType][] = [
 ];
 
 const PROVINCE_PHRASES: [string, Jurisdiction][] = [
-  ['newfoundland and labrador', 'NL'],
-  ['northwest territories', 'NT'],
-  ['prince edward island', 'PE'],
-  ['british columbia', 'BC'],
-  ['nova scotia', 'NS'],
-  ['new brunswick', 'NB'],
-  ['saskatchewan', 'SK'],
-  ['newfoundland', 'NL'],
-  ['manitoba', 'MB'],
-  ['nunavut', 'NU'],
-  ['ontario', 'ON'],
-  ['alberta', 'AB'],
-  ['quebec', 'QC'],
-  ['yukon', 'YT'],
+  ['newfoundland and labrador', 'CA-NL'],
+  ['northwest territories', 'CA-NT'],
+  ['prince edward island', 'CA-PE'],
+  ['british columbia', 'CA-BC'],
+  ['nova scotia', 'CA-NS'],
+  ['new brunswick', 'CA-NB'],
+  ['saskatchewan', 'CA-SK'],
+  ['newfoundland', 'CA-NL'],
+  ['manitoba', 'CA-MB'],
+  ['nunavut', 'CA-NU'],
+  ['ontario', 'CA-ON'],
+  ['alberta', 'CA-AB'],
+  ['quebec', 'CA-QC'],
+  ['yukon', 'CA-YT'],
 ];
 
 /** Request boilerplate that carries no information about which place is wanted. */
@@ -212,11 +213,18 @@ function detectJurisdiction(text: string): { code: Jurisdiction; phrase: string 
   for (const [phrase, code] of PROVINCE_PHRASES) {
     if (new RegExp(`(?:^|\\s)${phrase}(?:$|\\s)`).test(text)) return { code, phrase };
   }
-  // Two-letter codes, only when they stand alone: "in ON", "BC ridings".
+  /*
+   * Bare provincial abbreviations, only when they stand alone: "in ON", "BC ridings".
+   *
+   * These are mapped to their prefixed form rather than used as-is, because a bare code
+   * now means a COUNTRY. Typing "NL ridings" in a Canadian newsroom means Newfoundland,
+   * so it resolves to CA-NL; the Netherlands is reached by name, not by an abbreviation
+   * nobody types in this context.
+   */
   const m = /(?:^|\s)(ab|bc|mb|nb|nl|ns|nt|nu|on|pe|qc|sk|yt)(?:$|\s)/i.exec(text);
   if (m?.[1]) {
-    const code = m[1].toUpperCase();
-    if (isJurisdiction(code)) return { code, phrase: m[1] };
+    const code = LEGACY_CANADIAN_CODES[m[1].toUpperCase()];
+    if (code) return { code, phrase: m[1] };
   }
   return null;
 }

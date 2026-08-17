@@ -9,6 +9,15 @@ export type SourceKind = 'arcgis-hub' | 'esri-rest' | 'wfs' | 'ckan' | 'bulk-fil
  */
 export type SourceTier = 'A' | 'B';
 
+/**
+ * The extent a source is entitled to cover.
+ *
+ * 'canada' means geometry outside the Canadian envelope is a bug -- an unhandled CRS or
+ * a WFS axis flip -- and gets rejected loudly. 'world' means it is simply the rest of
+ * the planet.
+ */
+export type SourceRegion = 'canada' | 'world';
+
 export type SourceStatus =
   | 'seeded' // in the registry, never harvested
   | 'harvesting'
@@ -54,6 +63,9 @@ export interface SourceRow {
    */
   archive_bytes: number | null;
 
+  /** See SourceRegion. Every pre-international source is 'canada'. */
+  region: SourceRegion;
+
   /** Computed by listSources(): rows actually indexed so far. */
   indexed_count?: number;
 }
@@ -81,6 +93,15 @@ export interface SeedSource {
   identityField?: string;
   /** Tier B only: measured download size in bytes, so the UI can state the cost. */
   archiveBytes?: number;
+  /**
+   * Which part of the world this source legitimately covers. Defaults to 'canada'.
+   *
+   * Drives whether geometry outside Canada is treated as a CRS bug worth rejecting or
+   * as the rest of the planet. A world source also skips the part-trimming that exists
+   * to stop a Russia-shaped bounding box from matching every query -- see
+   * harvester/normalize/antimeridian.ts for how that is handled properly instead.
+   */
+  region?: SourceRegion;
   notes?: string;
 }
 
@@ -175,4 +196,18 @@ export interface AppSettings {
   providersWithKeys: string[];
   /** Where exports are written. Changed in Settings, never asked for mid-export. */
   exportFolder: string;
+}
+
+/**
+ * A jurisdiction the catalog can actually filter by, with how many features carry it.
+ *
+ * Countries are ISO 3166-1 alpha-2, subdivisions ISO 3166-2 (`CA-ON`). See
+ * shared/jurisdictions.ts for why subdivisions are country-prefixed.
+ */
+export interface JurisdictionOption {
+  code: string;
+  label: string;
+  kind: 'country' | 'subdivision';
+  parent: string | null;
+  feature_count: number;
 }

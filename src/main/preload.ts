@@ -23,6 +23,7 @@ const bridge: GisBridge = {
   keyClear: (providerId: string) => ipcRenderer.invoke(CH.keyClear, providerId),
   llmConfigSet: (config: LlmConfigUpdate) => ipcRenderer.invoke(CH.llmConfigSet, config),
   sourcesList: () => ipcRenderer.invoke(CH.sourcesList),
+  jurisdictionsList: () => ipcRenderer.invoke(CH.jurisdictionsList),
   sourcesSetStatus: (id: number, status: SourceRow['status']) => ipcRenderer.invoke(CH.sourcesSetStatus, id, status),
   downloadsList: () => ipcRenderer.invoke(CH.downloadsList),
   downloadsRemove: (sourceId: number) => ipcRenderer.invoke(CH.downloadsRemove, sourceId),

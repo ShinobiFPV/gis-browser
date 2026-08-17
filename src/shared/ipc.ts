@@ -1,4 +1,4 @@
-import type { AppSettings, Candidate, HarvestProgress, SourceRow } from './types';
+import type { AppSettings, Candidate, HarvestProgress, JurisdictionOption, SourceRow } from './types';
 
 /**
  * The full renderer <-> main surface. The preload bridge exposes exactly these and
@@ -12,6 +12,7 @@ export const CH = {
   keyClear: 'key:clear',
   llmConfigSet: 'llm:configSet',
   sourcesList: 'sources:list',
+  jurisdictionsList: 'jurisdictions:list',
   sourcesSetStatus: 'sources:setStatus',
   downloadsList: 'downloads:list',
   downloadsRemove: 'downloads:remove',
@@ -229,6 +230,7 @@ export interface GisBridge {
   keyClear(providerId: string): Promise<{ ok: boolean }>;
   llmConfigSet(config: LlmConfigUpdate): Promise<{ ok: boolean; error?: string }>;
   sourcesList(): Promise<SourceRow[]>;
+  jurisdictionsList(): Promise<JurisdictionOption[]>;
   sourcesSetStatus(id: number, status: SourceRow['status']): Promise<void>;
   downloadsList(): Promise<BulkDownload[]>;
   downloadsRemove(sourceId: number): Promise<{ ok: boolean; freedBytes: number }>;

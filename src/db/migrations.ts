@@ -1,5 +1,6 @@
 import type BetterSqlite3 from 'better-sqlite3';
 import { FEATURE_TYPES } from '@shared/taxonomy';
+import { CANADA_SUBDIVISION_BBOX, CANADA_SUBDIVISION_LABELS } from '@shared/jurisdictions';
 
 /**
  * Migrations are append-only. Each entry runs once, inside a transaction, and
@@ -233,6 +234,86 @@ CREATE TABLE discovered_sources (
 CREATE INDEX idx_discovered_decision ON discovered_sources(decision, confidence DESC);
 `;
 
+/**
+ * Country-prefix every Canadian jurisdiction code, and record what each code means.
+ *
+ * The codes were bare -- AB, BC, NL -- which worked exactly as long as the catalog was
+ * Canadian. Five of the thirteen are also ISO 3166-1 country codes for somewhere else
+ * (NL Netherlands, NU Niue, PE Peru, SK Slovakia, YT Mayotte), so the first country
+ * harvest would have merged Newfoundland into the Netherlands without erroring. Every
+ * code below a country now carries its country: CA-NL. Bare CA still means Canada.
+ *
+ * The `jurisdictions` table is the registry those codes resolve against. It is populated
+ * from harvested data rather than typed in, because the alternative is a table of 250
+ * country names and extents written from memory sitting next to the real ones from
+ * Natural Earth -- two sets of facts that would drift. Canada's own subdivisions are
+ * seeded here since discovery needs them before anything is harvested.
+ */
+const M8_INTERNATIONAL_JURISDICTIONS = `
+UPDATE features SET jurisdiction = 'CA-' || jurisdiction
+  WHERE jurisdiction IN ('AB','BC','MB','NB','NL','NS','NT','NU','ON','PE','QC','SK','YT');
+UPDATE sources SET jurisdiction = 'CA-' || jurisdiction
+  WHERE jurisdiction IN ('AB','BC','MB','NB','NL','NS','NT','NU','ON','PE','QC','SK','YT');
+UPDATE discovered_sources SET jurisdiction = 'CA-' || jurisdiction
+  WHERE jurisdiction IN ('AB','BC','MB','NB','NL','NS','NT','NU','ON','PE','QC','SK','YT');
+
+CREATE TABLE jurisdictions (
+  code TEXT PRIMARY KEY,
+  label TEXT NOT NULL,
+  -- 'country' or 'subdivision'. Kept explicit rather than inferred from the code shape
+  -- so a query can group without parsing strings.
+  kind TEXT NOT NULL CHECK (kind IN ('country','subdivision')),
+  -- NULL for a country; the containing country code for a subdivision.
+  parent TEXT,
+  -- Extent, learned from the harvested boundary. minx > maxx means the extent crosses the
+  -- antimeridian; see harvester/normalize/antimeridian.ts. Alaska and Russia both do.
+  minx REAL, miny REAL, maxx REAL, maxy REAL,
+  -- The feature this was learned from, so the extent can be traced and refreshed.
+  feature_id INTEGER REFERENCES features(id) ON DELETE SET NULL,
+  updated_at TEXT
+);
+
+CREATE INDEX idx_jurisdictions_parent ON jurisdictions(parent);
+
+/*
+ * Which part of the world a source is allowed to cover.
+ *
+ * Every existing source is Canadian, which is why the default is 'canada' and why that
+ * default is correct for every row already in the table. Ingest uses this to decide
+ * whether geometry outside Canada is a CRS bug to reject or simply the rest of the
+ * planet: the Natural Earth countries layer was being filtered down to the four
+ * countries touching Canada, which was right when the catalog was Canadian and is
+ * exactly what has to stop now.
+ */
+ALTER TABLE sources ADD COLUMN region TEXT NOT NULL DEFAULT 'canada'
+  CHECK (region IN ('canada','world'));
+
+/*
+ * Give every feature TWO R-tree slots instead of one.
+ *
+ * SQLite's rtree enforces minx <= maxx, so an antimeridian-crossing extent cannot be
+ * stored as a single row -- harvesting Alaska fails outright with "rtree constraint
+ * failed: features_rtree.(minx<=maxx)". The fix is to index such a feature as its two
+ * lobes: the part east of minx up to 180, and the part from -180 up to maxx.
+ *
+ * Slots are feature_id*2 and feature_id*2+1 rather than a separate mapping table, so
+ * deletion stays a single statement and no join is needed to get from a hit back to a
+ * feature (id >> 1). Existing rows move from id to id*2.
+ */
+DELETE FROM features_rtree WHERE id NOT IN (SELECT id FROM features);
+
+CREATE TABLE rtree_migrate_8 AS SELECT id, minx, maxx, miny, maxy FROM features_rtree;
+DELETE FROM features_rtree;
+INSERT INTO features_rtree (id, minx, maxx, miny, maxy)
+  SELECT id * 2, minx, maxx, miny, maxy FROM rtree_migrate_8;
+DROP TABLE rtree_migrate_8;
+
+DROP TRIGGER features_ad;
+CREATE TRIGGER features_ad AFTER DELETE ON features BEGIN
+  DELETE FROM features_rtree WHERE id IN (old.id * 2, old.id * 2 + 1);
+END;
+`;
+
 export const MIGRATIONS: Migration[] = [
   {
     version: 1,
@@ -268,6 +349,35 @@ export const MIGRATIONS: Migration[] = [
     version: 7,
     name: 'staging table for crawler-discovered sources',
     up: (db) => db.exec(M7_DISCOVERED),
+  },
+  {
+    version: 8,
+    name: 'country-prefix jurisdiction codes and add the jurisdiction registry',
+    up: (db) => {
+      db.exec(M8_INTERNATIONAL_JURISDICTIONS);
+
+      // Canada's own entries, seeded from the shared table so the codes, labels and
+      // extents cannot drift from the ones discovery scores against.
+      const insert = db.prepare(
+        `INSERT INTO jurisdictions (code, label, kind, parent, minx, miny, maxx, maxy, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      );
+      const now = new Date().toISOString();
+      for (const [code, label] of Object.entries(CANADA_SUBDIVISION_LABELS)) {
+        const box = CANADA_SUBDIVISION_BBOX[code]!;
+        insert.run(
+          code,
+          label,
+          code === 'CA' ? 'country' : 'subdivision',
+          code === 'CA' ? null : 'CA',
+          box.minLon,
+          box.minLat,
+          box.maxLon,
+          box.maxLat,
+          now,
+        );
+      }
+    },
   },
 ];
 

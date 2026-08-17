@@ -1,6 +1,7 @@
 import { type HttpClient, ServiceError, qs } from '../http';
 import { asFeatureId, asNumber, asText } from '@shared/scalar';
-import { bboxOf, padBbox, type Bbox, type Geometry } from '../normalize/crs';
+import { padBbox, type Bbox, type Geometry } from '../normalize/crs';
+import { bboxWrapAware } from '../normalize/antimeridian';
 
 /**
  * ESRI REST (MapServer / FeatureServer) client.
@@ -201,7 +202,10 @@ export async function* pageFeatures(http: HttpClient, opts: PageOptions): AsyncG
       const sourceFeatureId = asFeatureId(oid, `${url} field "${meta.objectIdField}"`);
       let bbox: Bbox | null = null;
       if (f.geometry) {
-        const raw = bboxOf(f.geometry);
+        // Wrap-aware, because this path now serves non-Canadian layers. Alaska in the
+        // Census states layer runs from -179.147 to 179.778; a plain min/max calls that
+        // -179..179, a box that contains every point on earth.
+        const raw = bboxWrapAware(f.geometry);
         // outSR=4326 was requested, so anything here is already lon/lat.
         if (raw) bbox = padBbox(raw, INDEX_OFFSET_DEG);
       }

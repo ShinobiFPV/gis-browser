@@ -9,7 +9,7 @@ import {
   rankResponseSchema,
   rankSystemPrompt,
   toRankView,
-  PARSE_JSON_SCHEMA,
+  parseJsonSchema,
   RANK_JSON_SCHEMA,
   type RankCandidateView,
 } from '@resolve/llm-contract';
@@ -34,19 +34,26 @@ export async function llmParse(
   provider: string,
   model: string,
   prompt: string,
+  /**
+   * The jurisdiction codes this catalog actually holds. Defaults to Canada.
+   *
+   * Passed in rather than read here so this stays free of the database, and so the model
+   * is never offered a code that can only filter the search down to nothing.
+   */
+  jurisdictions?: readonly string[],
 ): Promise<LlmParseResult> {
   const info = modelInfo(provider, model);
 
   const result = await client.send({
     model,
-    system: parseSystemPrompt(),
+    system: parseSystemPrompt(jurisdictions),
     user: prompt,
     maxTokens: 2048,
     timeoutMs: 30_000,
     // Schema enforcement where the model supports it; prompt-only where it does not.
     // Either way the response is validated with zod below, so the difference is how often
     // the fallback fires, not whether bad data can get through.
-    ...(info.structuredOutputs ? { jsonSchema: PARSE_JSON_SCHEMA } : {}),
+    ...(info.structuredOutputs ? { jsonSchema: parseJsonSchema(jurisdictions) } : {}),
     ...(info.effort ? { effort: 'low' as const } : {}),
   });
 
@@ -68,7 +75,7 @@ export async function llmParse(
     );
   }
 
-  const coerced = coerceParse(validated.data);
+  const coerced = coerceParse(validated.data, jurisdictions);
   if (coerced.placeNames.length === 0) {
     throw new LlmUnavailableError('The model returned no usable place name.', 'bad-response');
   }

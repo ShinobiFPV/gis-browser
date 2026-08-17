@@ -18,6 +18,12 @@ import type { SeedSource } from '@shared/types';
 
 export const VERIFIED_AT = '2026-08-16';
 
+/** The international sources, verified separately and later. */
+export const VERIFIED_AT_INTL = '2026-08-17';
+
+const TIGERWEB_ACS2025 =
+  'https://tigerweb.geo.census.gov/arcgis/rest/services/Generalized_ACS2025/State_County/MapServer';
+
 const OGL_CANADA = 'Open Government Licence – Canada';
 const OGL_ONTARIO = 'Open Government Licence – Ontario';
 const STATCAN_LICENCE = 'Statistics Canada Open Licence';
@@ -195,7 +201,7 @@ const INDIGENOUS: SeedSource[] = [
     endpoint: LIO_OPEN03,
     layerId: '12',
     featureType: 'indian_reserve',
-    jurisdiction: 'ON',
+    jurisdiction: 'CA-ON',
     vintage: 'LIO current',
     licence: OGL_ONTARIO,
     attribution: '© King’s Printer for Ontario',
@@ -285,7 +291,7 @@ const PROVINCIAL: SeedSource[] = [
     endpoint: 'https://services.arcgis.com/6iGx1Dq91oKtcE7x/arcgis/rest/services/Electoral_Districts_Public_View/FeatureServer',
     layerId: '0',
     featureType: 'provincial_electoral_district',
-    jurisdiction: 'ON',
+    jurisdiction: 'CA-ON',
     vintage: '2018 redistribution',
     licence: OGL_ONTARIO,
     attribution: '© King’s Printer for Ontario',
@@ -300,7 +306,7 @@ const PROVINCIAL: SeedSource[] = [
     endpoint: 'https://services8.arcgis.com/aCyQID5qQcyrJMm2/arcgis/rest/services/Provincial_Electoral_Districts/FeatureServer',
     layerId: '0',
     featureType: 'provincial_electoral_district',
-    jurisdiction: 'NL',
+    jurisdiction: 'CA-NL',
     vintage: 'current',
     licence: 'Unconfirmed — verify before broadcast use',
     attribution: 'Government of Newfoundland and Labrador',
@@ -323,7 +329,7 @@ const PROVINCIAL: SeedSource[] = [
       'https://services.arcgis.com/U1hR2EB4RbcbOZPY/arcgis/rest/services/Current_Alberta_Electoral_Divisions/FeatureServer',
     layerId: '0',
     featureType: 'provincial_electoral_district',
-    jurisdiction: 'AB',
+    jurisdiction: 'CA-AB',
     vintage: 'current',
     licence: 'Unconfirmed — verify before broadcast use',
     attribution: 'Elections Alberta',
@@ -341,7 +347,7 @@ const PROVINCIAL: SeedSource[] = [
     endpoint: 'https://gis.saskatchewan.ca/arcgis/rest/services/Administrative/MapServer',
     layerId: '6',
     featureType: 'provincial_electoral_district',
-    jurisdiction: 'SK',
+    jurisdiction: 'CA-SK',
     vintage: 'current',
     licence: 'Unconfirmed — verify before broadcast use',
     attribution: 'Elections Saskatchewan',
@@ -360,7 +366,7 @@ const PROVINCIAL: SeedSource[] = [
     endpoint: 'https://mapservices.gov.yk.ca/arcgis/rest/services/GeoYukon/GY_AdministrativeBoundaries/MapServer',
     layerId: '75',
     featureType: 'provincial_electoral_district',
-    jurisdiction: 'YT',
+    jurisdiction: 'CA-YT',
     vintage: 'current',
     licence: 'Unconfirmed — verify before broadcast use',
     attribution: 'Government of Yukon on behalf of Elections Yukon',
@@ -379,7 +385,7 @@ const PROVINCIAL: SeedSource[] = [
     endpoint: LIO_OPEN03,
     layerId: '14',
     featureType: 'municipality',
-    jurisdiction: 'ON',
+    jurisdiction: 'CA-ON',
     vintage: 'LIO current',
     licence: OGL_ONTARIO,
     attribution: '© King’s Printer for Ontario',
@@ -394,7 +400,7 @@ const PROVINCIAL: SeedSource[] = [
     endpoint: LIO_OPEN03,
     layerId: '13',
     featureType: 'regional_district',
-    jurisdiction: 'ON',
+    jurisdiction: 'CA-ON',
     vintage: 'LIO current',
     licence: OGL_ONTARIO,
     attribution: '© King’s Printer for Ontario',
@@ -408,7 +414,7 @@ const PROVINCIAL: SeedSource[] = [
     endpoint: LIO_OPEN03,
     layerId: '4',
     featureType: 'provincial_park',
-    jurisdiction: 'ON',
+    jurisdiction: 'CA-ON',
     vintage: 'LIO current',
     licence: OGL_ONTARIO,
     attribution: '© King’s Printer for Ontario',
@@ -425,7 +431,7 @@ const PROVINCIAL: SeedSource[] = [
     endpoint: LIO_OPEN04,
     layerId: '2',
     featureType: 'watershed',
-    jurisdiction: 'ON',
+    jurisdiction: 'CA-ON',
     vintage: 'LIO current',
     licence: OGL_ONTARIO,
     attribution: '© King’s Printer for Ontario',
@@ -439,7 +445,7 @@ const PROVINCIAL: SeedSource[] = [
     endpoint: LIO_OPEN09,
     layerId: '44',
     featureType: 'health_region',
-    jurisdiction: 'ON',
+    jurisdiction: 'CA-ON',
     vintage: 'LIO current',
     licence: OGL_ONTARIO,
     attribution: '© King’s Printer for Ontario',
@@ -468,7 +474,7 @@ function bcwfs(
     endpoint: BC_WFS,
     layerId: typeName,
     featureType,
-    jurisdiction: 'BC',
+    jurisdiction: 'CA-BC',
     vintage: 'BCGW current',
     licence: 'Open Government Licence – British Columbia',
     attribution: 'Province of British Columbia',
@@ -600,9 +606,12 @@ const BULK: SeedSource[] = [
     verifiedCount: null,
     verifiedAt: VERIFIED_AT,
     archiveBytes: 4_930_492,
+    region: 'world',
     notes:
-      '4.9 MB. Context layer for neighbouring countries behind a Canadian boundary. A world ' +
-      'dataset: ingest keeps only the 7 countries whose extent overlaps Canada.',
+      '4.9 MB. Every country on earth. Was previously filtered to the handful whose extent ' +
+      'overlaps Canada -- which indexed 4 of them -- until region: world lifted that. ' +
+      'Jurisdiction comes from each row: ISO_A2_EH first, since Natural Earth writes -99 ' +
+      'into ISO_A2 for contested entities.',
   }),
   bulk({
     name: 'Natural Earth 10m — Lakes',
@@ -662,6 +671,43 @@ const PHYSICAL: SeedSource[] = [
   }),
 ];
 
+// ---------------------------------------------------------------------------
+// International.
+//
+// The first step outside Canada: every country, and the United States broken down to
+// states. Countries come from the Natural Earth archive already in BULK, which simply
+// stopped being filtered to Canada; states get their own source here because the US
+// Census publishes them itself and an authoritative national boundary beats a
+// generalised world layer for the country you are actually reporting on.
+// ---------------------------------------------------------------------------
+
+const INTERNATIONAL: SeedSource[] = [
+  esri({
+    name: 'United States — States and Equivalents (Census, 2025 vintage)',
+    endpoint: TIGERWEB_ACS2025,
+    // Layer 7, not layer 2. Both are called "States 500K" and both return 56 rows, but
+    // layer 2 publishes only OBJECTID, GEOID and STUSAB -- no name field at all, which
+    // would make every state unsearchable by name. Layer 7 carries NAME and BASENAME.
+    layerId: '7',
+    featureType: 'province_territory',
+    jurisdiction: 'US',
+    vintage: '2025 (ACS generalized, 1:500k)',
+    licence: 'U.S. Government Work — public domain',
+    attribution: 'U.S. Census Bureau',
+    nameFields: ['NAME', 'BASENAME', 'STUSAB'],
+    sourceSrid: 3857,
+    // 50 states + District of Columbia + Puerto Rico, Guam, American Samoa, the US
+    // Virgin Islands and the Northern Mariana Islands. Confirmed with returnCountOnly.
+    verifiedCount: 56,
+    verifiedAt: VERIFIED_AT_INTL,
+    region: 'world',
+    notes:
+      'Per-row jurisdiction comes from STUSAB, giving US-TX and so on. Alaska crosses the ' +
+      'antimeridian -- its parts run -179.147 to 179.778, verified live -- so its extent is ' +
+      'stored wrapped (minx > maxx) rather than as a box covering the planet.',
+  }),
+];
+
 export const SEED_SOURCES: SeedSource[] = [
   ...FEDERAL_ELECTORAL,
   ...INDIGENOUS,
@@ -669,6 +715,7 @@ export const SEED_SOURCES: SeedSource[] = [
   ...PROVINCIAL,
   ...BRITISH_COLUMBIA,
   ...PHYSICAL,
+  ...INTERNATIONAL,
   ...BULK,
 ];
 

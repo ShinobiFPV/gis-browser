@@ -144,13 +144,20 @@ describe('multipart merge via identity_field', () => {
     expect(merged['maxx']).toBeCloseTo(-80.0);
     expect(merged['maxy']).toBeCloseTo(45.5);
 
-    // And the R-tree entry reflects the union, not just the last part seen.
-    const r = db.prepare('SELECT minx, maxx FROM features_rtree WHERE id = ?').get(merged['id']!) as {
+    // And the R-tree entry reflects the union, not just the last part seen. The slot is
+    // id*2: each feature gets two, so an antimeridian-crossing extent can be indexed as
+    // its two lobes. See migration 8.
+    const r = db.prepare('SELECT minx, maxx FROM features_rtree WHERE id = ?').get(merged['id']! * 2) as {
       minx: number;
       maxx: number;
     };
     expect(r.minx).toBeCloseTo(-81.0, 4);
     expect(r.maxx).toBeCloseTo(-80.0, 4);
+
+    // This extent does not wrap, so the odd slot stays empty.
+    expect(db.prepare('SELECT COUNT(*) n FROM features_rtree WHERE id = ?').get(merged['id']! * 2 + 1)).toEqual({
+      n: 0,
+    });
   });
 
   it('fails loudly when a row is missing the identity field', () => {
@@ -206,7 +213,7 @@ describe('jurisdiction derivation', () => {
     const j = db.prepare('SELECT jurisdiction FROM features ORDER BY source_feature_id').all() as {
       jurisdiction: string;
     }[];
-    expect(j.map((x) => x.jurisdiction)).toEqual(['ON', 'BC']);
+    expect(j.map((x) => x.jurisdiction)).toEqual(['CA-ON', 'CA-BC']);
   });
 
   it('maps the CLSS jurisdictionEng name onto a province code', () => {
@@ -218,7 +225,7 @@ describe('jurisdiction derivation', () => {
     createIngestor(db, source).writeBatch([
       row({ OBJECTID: 1, adminAreaNameEng: 'X', distributionTypeEng: 'Indian Reserve', jurisdictionEng: 'Ontario' }),
     ]);
-    expect(db.prepare('SELECT jurisdiction FROM features').get()).toEqual({ jurisdiction: 'ON' });
+    expect(db.prepare('SELECT jurisdiction FROM features').get()).toEqual({ jurisdiction: 'CA-ON' });
   });
 });
 
@@ -234,6 +241,69 @@ describe('geometry sanity', () => {
     expect(db.prepare('SELECT COUNT(*) n FROM features_rtree').get()).toEqual({ n: 0 });
     // The feature itself is still indexed and searchable by name.
     expect(db.prepare('SELECT COUNT(*) n FROM features').get()).toEqual({ n: 1 });
+  });
+});
+
+describe('antimeridian features', () => {
+  /*
+   * Alaska's real numbers, from the live Census layer. Its extent is stored wrapped
+   * (minx > maxx) because a plain box for it is the entire planet -- and SQLite's rtree
+   * refuses minx > maxx outright, so this used to fail the harvest with
+   * "rtree constraint failed: features_rtree.(minx<=maxx)".
+   */
+  const ALASKA = { minx: 172.457, miny: 51.2, maxx: -129.969, maxy: 71.4 };
+
+  it('indexes a wrapped extent as two lobes instead of failing', () => {
+    const source = addSource(db, { region: 'world', feature_type: 'province_territory', jurisdiction: 'US' });
+    const ing = createIngestor(db, source);
+
+    ing.writeBatch([{ sourceFeatureId: '1', attributes: { OBJECTID: 1, ED_NAMEE: 'Alaska' }, bbox: ALASKA }]);
+
+    const f = db.prepare("SELECT id, minx, maxx FROM features WHERE official_name = 'Alaska'").get() as {
+      id: number;
+      minx: number;
+      maxx: number;
+    };
+    // Stored as measured: the wrap is the information, not a defect to normalise away.
+    expect(f.minx).toBeGreaterThan(f.maxx);
+
+    const lobes = db
+      .prepare('SELECT id, minx, maxx FROM features_rtree WHERE id IN (?, ?) ORDER BY id')
+      .all(f.id * 2, f.id * 2 + 1) as { id: number; minx: number; maxx: number }[];
+
+    expect(lobes).toHaveLength(2);
+    expect(lobes[0]).toMatchObject({ id: f.id * 2, maxx: 180 });
+    expect(lobes[1]).toMatchObject({ id: f.id * 2 + 1, minx: -180 });
+  });
+
+  it('does not let a wrapped extent match the far side of the world', () => {
+    const source = addSource(db, { region: 'world', feature_type: 'province_territory', jurisdiction: 'US' });
+    createIngestor(db, source).writeBatch([
+      { sourceFeatureId: '1', attributes: { OBJECTID: 1, ED_NAMEE: 'Alaska' }, bbox: ALASKA },
+    ]);
+
+    // London. The naive -179..179 box would have claimed it, and every other point too.
+    const hits = db
+      .prepare('SELECT COUNT(*) n FROM features_rtree WHERE minx <= ? AND maxx >= ? AND miny <= ? AND maxy >= ?')
+      .get(-0.1, -0.12, 51.6, 51.5) as { n: number };
+    expect(hits.n).toBe(0);
+
+    // Attu, in the western lobe, must still match.
+    const attu = db
+      .prepare('SELECT COUNT(*) n FROM features_rtree WHERE minx <= ? AND maxx >= ? AND miny <= ? AND maxy >= ?')
+      .get(173, 172.9, 52.9, 52.8) as { n: number };
+    expect(attu.n).toBe(1);
+  });
+
+  it('clears both slots on delete', () => {
+    const source = addSource(db, { region: 'world', feature_type: 'province_territory', jurisdiction: 'US' });
+    createIngestor(db, source).writeBatch([
+      { sourceFeatureId: '1', attributes: { OBJECTID: 1, ED_NAMEE: 'Alaska' }, bbox: ALASKA },
+    ]);
+    expect(db.prepare('SELECT COUNT(*) n FROM features_rtree').get()).toEqual({ n: 2 });
+
+    db.prepare('DELETE FROM sources WHERE id = ?').run(source.id);
+    expect(db.prepare('SELECT COUNT(*) n FROM features_rtree').get()).toEqual({ n: 0 });
   });
 });
 

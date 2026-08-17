@@ -1,13 +1,16 @@
-import type { Jurisdiction } from './taxonomy';
+import {
+  CANADA_SUBDIVISION_ALIASES,
+  CANADA_SUBDIVISION_BBOX,
+  type Jurisdiction,
+  type LonLatBox,
+} from './jurisdictions';
 
 /**
- * Bounding box of every province and territory.
+ * Canadian extent scoring for discovery.
  *
- * Not typed in by hand: these were read out of the harvested Statistics Canada 2021
- * province/territory boundaries, so they are the same extents the rest of the catalog uses
- * rather than a second, subtly different set of numbers.
- *
- * Used by discovery to answer two questions about a candidate dataset:
+ * DELIBERATELY STILL CANADA-ONLY. The discovery crawlers search Canadian catalogs --
+ * provincial ArcGIS Hub sites and CKAN portals -- and these functions answer two
+ * questions about a candidate found there:
  *
  *   1. Which jurisdiction is it about? An extent sitting inside Saskatchewan is a strong
  *      signal even when nothing in the title says so.
@@ -16,48 +19,19 @@ import type { Jurisdiction } from './taxonomy';
  *      hundred-odd ridings. Comparing the extent against the province catches those, and
  *      indexing one as if it were the provincial layer would put five fake ridings into a
  *      search that decides what goes on air.
+ *
+ * International sources are seeded explicitly with a verified endpoint and a known
+ * jurisdiction, so none of this guessing applies to them. Generalising these heuristics
+ * worldwide would mean inventing extents for 200 countries; the honest version of that
+ * is to learn each country's extent from its harvested boundary, which is what the
+ * `jurisdictions` registry does.
  */
-export interface LonLatBox {
-  minLon: number;
-  minLat: number;
-  maxLon: number;
-  maxLat: number;
-}
 
-export const PROVINCE_BBOX: Record<Jurisdiction, LonLatBox> = {
-  AB: { minLon: -120.005, minLat: 48.994, maxLon: -109.995, maxLat: 60.005 },
-  BC: { minLon: -139.057, minLat: 48.292, maxLon: -114.05, maxLat: 60.005 },
-  MB: { minLon: -102.012, minLat: 48.994, maxLon: -88.975, maxLat: 60.005 },
-  NB: { minLon: -69.055, minLat: 44.563, maxLon: -63.766, maxLat: 48.077 },
-  NL: { minLon: -67.826, minLat: 46.606, maxLon: -52.614, maxLat: 60.381 },
-  NS: { minLon: -66.4, minLat: 43.383, maxLon: -59.656, maxLat: 47.233 },
-  NT: { minLon: -136.474, minLat: 59.995, maxLon: -101.995, maxLat: 78.81 },
-  NU: { minLon: -120.73, minLat: 51.25, maxLon: -61.086, maxLat: 83.142 },
-  ON: { minLon: -95.16, minLat: 41.676, maxLon: -74.339, maxLat: 56.865 },
-  PE: { minLon: -64.418, minLat: 45.943, maxLon: -61.966, maxLat: 47.064 },
-  QC: { minLon: -79.768, minLat: 44.986, maxLon: -57.103, maxLat: 62.587 },
-  SK: { minLon: -110.015, minLat: 48.994, maxLon: -101.357, maxLat: 60.005 },
-  YT: { minLon: -141.023, minLat: 59.995, maxLon: -123.784, maxLat: 69.652 },
-  CA: { minLon: -141.5, minLat: 41.0, maxLon: -52.0, maxLat: 84.0 },
-};
+export type { LonLatBox };
 
-/** Province names and the common variants that appear in dataset titles. */
-export const PROVINCE_ALIASES: Record<Jurisdiction, string[]> = {
-  AB: ['alberta'],
-  BC: ['british columbia', 'colombie-britannique'],
-  MB: ['manitoba'],
-  NB: ['new brunswick', 'nouveau-brunswick'],
-  NL: ['newfoundland and labrador', 'newfoundland', 'labrador', 'terre-neuve'],
-  NS: ['nova scotia', 'nouvelle-ecosse', 'nouvelle-écosse'],
-  NT: ['northwest territories', 'territoires du nord-ouest'],
-  NU: ['nunavut'],
-  ON: ['ontario'],
-  PE: ['prince edward island', 'ile-du-prince-edouard', 'île-du-prince-édouard'],
-  QC: ['quebec', 'québec'],
-  SK: ['saskatchewan'],
-  YT: ['yukon'],
-  CA: ['canada', 'canadian', 'federal', 'national'],
-};
+/** Re-keyed to ISO 3166-2 (`CA-ON`). See ./jurisdictions for why the prefix exists. */
+export const PROVINCE_BBOX = CANADA_SUBDIVISION_BBOX;
+export const PROVINCE_ALIASES = CANADA_SUBDIVISION_ALIASES;
 
 /**
  * Canada spans about 89 degrees of longitude and 43 of latitude. An extent materially
@@ -103,7 +77,7 @@ export function intersectionArea(a: LonLatBox, b: LonLatBox): number {
 }
 
 /**
- * The jurisdiction whose extent best contains this box.
+ * The Canadian jurisdiction whose extent best contains this box.
  *
  * Scored by how much of the CANDIDATE falls inside the province, not the reverse: a
  * dataset covering one city is entirely inside its province and should still be
@@ -115,15 +89,16 @@ export function jurisdictionForExtent(box: LonLatBox): { jurisdiction: Jurisdict
   if (area <= 0) return null;
 
   let best: { jurisdiction: Jurisdiction; containment: number } | null = null;
-  for (const [code, province] of Object.entries(PROVINCE_BBOX) as [Jurisdiction, LonLatBox][]) {
+  for (const [code, province] of Object.entries(PROVINCE_BBOX)) {
     if (code === 'CA') continue;
     const containment = intersectionArea(box, province) / area;
     if (!best || containment > best.containment) best = { jurisdiction: code, containment };
   }
 
+  const canada = PROVINCE_BBOX['CA']!;
   if (!best || best.containment < 0.5) {
     // Spread across several provinces. National if most of it is inside Canada.
-    const inCanada = intersectionArea(box, PROVINCE_BBOX.CA) / area;
+    const inCanada = intersectionArea(box, canada) / area;
     if (inCanada > 0.5) return { jurisdiction: 'CA', containment: inCanada };
 
     /*
@@ -145,9 +120,13 @@ export function jurisdictionForExtent(box: LonLatBox): { jurisdiction: Jurisdict
  * A provincial electoral district layer should cover most of its province. The City of
  * Brampton's "Provincial Electoral Districts" covers 0.03% of Ontario and holds 5 of its
  * 124 ridings -- a municipal subset wearing a provincial title.
+ *
+ * Zero for a jurisdiction with no hard-coded extent, which is every non-Canadian one:
+ * an unknown extent must not read as full coverage.
  */
 export function coverageOf(box: LonLatBox, jurisdiction: Jurisdiction): number {
   const province = PROVINCE_BBOX[jurisdiction];
+  if (!province) return 0;
   const provinceArea = areaOf(province);
   return provinceArea <= 0 ? 0 : intersectionArea(box, province) / provinceArea;
 }

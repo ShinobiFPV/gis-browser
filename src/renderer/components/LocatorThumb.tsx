@@ -1,4 +1,4 @@
-import { CANADA_BBOX } from '@shared/taxonomy';
+import { CANADA_BBOX, WORLD_BBOX } from '@shared/taxonomy';
 
 interface Props {
   bbox: [number, number, number, number] | null;
@@ -10,7 +10,35 @@ const W = 46;
 const H = 24;
 
 /**
- * A candidate thumbnail: where in Canada this feature is.
+ * Which map to draw this feature on.
+ *
+ * Canada when the feature is inside Canada, the world otherwise. Framing everything on
+ * Canada was right when everything WAS Canada; with the catalog international it clamps
+ * every foreign feature to the edge of the frame, so France, Japan and Texas all get an
+ * identical marker pinned against the right-hand side -- confidently wrong, and precisely
+ * the kind of thing that only shows up by looking at the rendered output.
+ *
+ * The Canadian frame is kept rather than going world-only because it is what makes the
+ * thumbnail useful for the app's main job: telling Sarnia, Ontario from Sarnia No. 221 in
+ * Saskatchewan. At world scale those two are the same pixel.
+ */
+function frameFor(bbox: [number, number, number, number] | null): typeof CANADA_BBOX {
+  if (!bbox) return CANADA_BBOX;
+  const [minx, miny, maxx, maxy] = bbox;
+
+  // A wrapped extent (minx > maxx) crosses the antimeridian, so it is never inside Canada.
+  if (minx > maxx) return WORLD_BBOX;
+
+  const inside =
+    minx >= CANADA_BBOX.minLon &&
+    maxx <= CANADA_BBOX.maxLon &&
+    miny >= CANADA_BBOX.minLat &&
+    maxy <= CANADA_BBOX.maxLat;
+  return inside ? CANADA_BBOX : WORLD_BBOX;
+}
+
+/**
+ * A candidate thumbnail: where this feature is.
  *
  * Deliberately drawn from the bounding box the index already holds, not from geometry.
  * Rendering five real outlines would mean five geometry fetches on every keystroke-driven
@@ -19,7 +47,8 @@ const H = 24;
  * artist actually needs from a list -- position is the useful signal anyway.
  */
 export function LocatorThumb({ bbox, active = false }: Props): React.JSX.Element {
-  const { minLon, minLat, maxLon, maxLat } = CANADA_BBOX;
+  const frame = frameFor(bbox);
+  const { minLon, minLat, maxLon, maxLat } = frame;
   const lonSpan = maxLon - minLon;
   const latSpan = maxLat - minLat;
 
@@ -28,15 +57,24 @@ export function LocatorThumb({ bbox, active = false }: Props): React.JSX.Element
 
   let marker: React.JSX.Element | null = null;
   if (bbox) {
-    const x1 = toX(bbox[0]);
-    const x2 = toX(bbox[2]);
+    const wrapped = bbox[0] > bbox[2];
+    /*
+     * A wrapped extent is measured the long way round, so its width and centre have to be
+     * computed on the circle. Alaska's stored extent is 172.5..-130.0; subtracting gives
+     * -302 degrees, which would draw an inverted rectangle and put the crosshair in the
+     * Indian Ocean.
+     */
+    const spanLon = wrapped ? 360 - bbox[0] + bbox[2] : bbox[2] - bbox[0];
+    let midLon = bbox[0] + spanLon / 2;
+    if (midLon > 180) midLon -= 360;
+
     const y1 = toY(bbox[3]);
     const y2 = toY(bbox[1]);
     // A reserve is under a pixel wide at national scale, so enforce a floor or the marker
     // vanishes for exactly the features this app is most used for.
-    const w = Math.max(3, x2 - x1);
+    const w = Math.max(3, (spanLon / lonSpan) * W);
     const h = Math.max(3, y2 - y1);
-    const cx = Math.min(W, Math.max(0, (x1 + x2) / 2));
+    const cx = Math.min(W, Math.max(0, toX(midLon)));
     const cy = Math.min(H, Math.max(0, (y1 + y2) / 2));
     const cls = active ? 'thumb-marker active' : 'thumb-marker';
     marker = (

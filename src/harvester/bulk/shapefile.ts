@@ -3,6 +3,8 @@ import { basename } from 'node:path';
 import * as shapefile from 'shapefile';
 import proj4 from 'proj4';
 import { bboxOf, intersectsCanada, type Bbox, type Geometry } from '../normalize/crs';
+import { bboxWrapAware } from '../normalize/antimeridian';
+import type { SourceRegion } from '@shared/types';
 import type { IndexedRow } from '../catalogs/esri-rest';
 
 /**
@@ -230,6 +232,13 @@ export interface ReadOptions {
   isCancelled?: () => boolean;
   /** Mutated as reading proceeds, since a generator cannot return a summary. */
   stats?: ReadStats;
+  /**
+   * What this source is allowed to cover. Defaults to 'canada'.
+   *
+   * A 'world' source skips BOTH Canada filters below. That is the entire difference
+   * between indexing four countries and indexing all of them.
+   */
+  region?: SourceRegion;
 }
 
 export function emptyReadStats(): ReadStats {
@@ -356,6 +365,7 @@ function reproject(geometry: Geometry, convert: (p: number[]) => number[]): Geom
 export async function* readLayer(opts: ReadOptions): AsyncGenerator<BulkRow[]> {
   const { set, crs, encoding } = opts;
   const batchSize = opts.batchSize ?? 500;
+  const region = opts.region ?? 'canada';
 
   if (!set.dbf) {
     throw new ShapefileError(
@@ -399,22 +409,35 @@ export async function* readLayer(opts: ReadOptions): AsyncGenerator<BulkRow[]> {
       const raw: Geometry = feature.geometry;
       const projected = transform ? reproject(raw, transform) : raw;
 
-      const trimmed = dropDistantParts(projected);
-      if (!trimmed.geometry) {
-        stats.skippedOutsideCanada++;
-        continue;
+      /*
+       * Canadian sources drop the parts of a feature that lie nowhere near Canada;
+       * world sources keep every part.
+       *
+       * For a world source this is not an optimisation, it is a correctness
+       * requirement: dropping distant parts would amputate Alaska's western Aleutians
+       * and Russia's Chukotka. The bounding-box problem that trimming existed to solve
+       * is solved properly instead, by measuring longitude on a circle -- see
+       * bboxWrapAware.
+       */
+      let geometry = projected;
+      if (region === 'canada') {
+        const trimmed = dropDistantParts(projected);
+        if (!trimmed.geometry) {
+          stats.skippedOutsideCanada++;
+          continue;
+        }
+        stats.droppedDistantParts += trimmed.dropped;
+        geometry = trimmed.geometry;
       }
-      stats.droppedDistantParts += trimmed.dropped;
-      const geometry = trimmed.geometry;
 
-      const bbox: Bbox | null = bboxOf(geometry);
+      const bbox: Bbox | null = bboxWrapAware(geometry);
 
       // Natural Earth's archives are world datasets: 1,300 lakes of which a handful are
       // Canadian. Anything that does not overlap Canada at all is dropped rather than
       // indexed with a null bbox, which would leave it searchable by name but invisible
       // to every spatial query. Intersection, not containment: the Great Lakes and the
       // United States straddle the border and are wanted as context.
-      if (bbox && !intersectsCanada(bbox)) {
+      if (region === 'canada' && bbox && !intersectsCanada(bbox)) {
         stats.skippedOutsideCanada++;
         continue;
       }

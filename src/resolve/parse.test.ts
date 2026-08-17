@@ -35,13 +35,13 @@ describe('parsePrompt', () => {
 
   it('recognises a province and removes it from the name', () => {
     const p = parsePrompt('every reserve in Ontario');
-    expect(p.jurisdictionHint).toBe('ON');
+    expect(p.jurisdictionHint).toBe('CA-ON');
     expect(p.featureTypeHint).toBe('indian_reserve');
     expect(p.placeNames[0]).toBe('every');
   });
 
   it('recognises a two-letter province code standing alone', () => {
-    expect(parsePrompt('school districts in BC').jurisdictionHint).toBe('BC');
+    expect(parsePrompt('school districts in BC').jurisdictionHint).toBe('CA-BC');
   });
 
   it('does not mistake a province code buried in a word', () => {

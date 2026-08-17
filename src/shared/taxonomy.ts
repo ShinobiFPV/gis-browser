@@ -140,51 +140,20 @@ export const FEATURE_TYPE_LABELS: Record<FeatureType, string> = {
   transit_system: 'Transit system',
 };
 
-/** Jurisdiction codes used in `sources.jurisdiction` and `features.jurisdiction`. */
-export const JURISDICTIONS = [
-  'CA',
-  'AB',
-  'BC',
-  'MB',
-  'NB',
-  'NL',
-  'NS',
-  'NT',
-  'NU',
-  'ON',
-  'PE',
-  'QC',
-  'SK',
-  'YT',
-] as const;
-
-export type Jurisdiction = (typeof JURISDICTIONS)[number];
-
-export const JURISDICTION_LABELS: Record<Jurisdiction, string> = {
-  CA: 'Canada (federal)',
-  AB: 'Alberta',
-  BC: 'British Columbia',
-  MB: 'Manitoba',
-  NB: 'New Brunswick',
-  NL: 'Newfoundland and Labrador',
-  NS: 'Nova Scotia',
-  NT: 'Northwest Territories',
-  NU: 'Nunavut',
-  ON: 'Ontario',
-  PE: 'Prince Edward Island',
-  QC: 'Quebec',
-  SK: 'Saskatchewan',
-  YT: 'Yukon',
-};
-
-const JURISDICTION_SET: ReadonlySet<string> = new Set(JURISDICTIONS);
-
-export function isJurisdiction(value: unknown): value is Jurisdiction {
-  return typeof value === 'string' && JURISDICTION_SET.has(value);
-}
-
 /**
- * Canada's rough lon/lat envelope. Harvested geometry outside this fails loudly --
- * it almost always means an unhandled CRS or a WFS 2.0 axis-order flip.
+ * Jurisdiction codes moved to ./jurisdictions when the catalog stopped being Canadian.
+ *
+ * They are re-exported here because the taxonomy is where the rest of the app expects to
+ * find the closed vocabularies, but the jurisdiction set is no longer closed and no
+ * longer fits alongside feature types. See ./jurisdictions for why the Canadian codes
+ * are now prefixed.
  */
-export const CANADA_BBOX = { minLon: -141.5, minLat: 41.0, maxLon: -52.0, maxLat: 84.0 } as const;
+export {
+  CANADA_BBOX,
+  CANADA_JURISDICTIONS,
+  CANADA_SUBDIVISION_LABELS,
+  isJurisdiction,
+  parseJurisdiction,
+  WORLD_BBOX,
+  type Jurisdiction,
+} from './jurisdictions';

@@ -13,7 +13,7 @@ import {
 } from '@shared/ipc';
 import type { AppSettings, SourceRow } from '@shared/types';
 import { getDb } from '@db/index';
-import { listSources, setSourceStatus } from '@db/queries';
+import { listJurisdictions, listSources, setSourceStatus } from '@db/queries';
 import { clearKey, providersWithKeys, setKey } from './keychain';
 import { cancelHarvest, startHarvest } from './harvester-host';
 import { getGeometry } from './geometry-service';
@@ -54,6 +54,7 @@ export function registerIpc(win: BrowserWindow, ctx: { dbPath: string; dataDir: 
   });
 
   ipcMain.handle(CH.sourcesList, (): SourceRow[] => listSources(getDb()));
+  ipcMain.handle(CH.jurisdictionsList, () => listJurisdictions(getDb()));
 
   ipcMain.handle(CH.sourcesSetStatus, (_e, id: unknown, status: unknown) => {
     if (typeof id !== 'number') throw new Error('sources:setStatus expects a numeric id');

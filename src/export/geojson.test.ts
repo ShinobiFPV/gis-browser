@@ -54,6 +54,7 @@ function source(over: Partial<SourceRow> = {}): SourceRow {
     notes: null,
     identity_field: null,
     archive_bytes: null,
+  region: 'canada',
     ...over,
   };
 }

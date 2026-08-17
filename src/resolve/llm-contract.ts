@@ -2,11 +2,11 @@ import { z } from 'zod';
 import {
   FEATURE_TYPES,
   isFeatureType,
-  isJurisdiction,
-  JURISDICTIONS,
+  CANADA_JURISDICTIONS,
   type FeatureType,
   type Jurisdiction,
 } from '@shared/taxonomy';
+import { LEGACY_CANADIAN_CODES } from '@shared/jurisdictions';
 import type { Candidate } from '@shared/types';
 
 /**
@@ -51,8 +51,34 @@ export interface CoercedParse {
   discarded: string[];
 }
 
-export function coerceParse(raw: ParseResponse): CoercedParse {
+/**
+ * Resolves a jurisdiction hint against the codes the catalog actually holds.
+ *
+ * Checked against a LIST rather than by shape, because shape alone stopped meaning
+ * anything once codes went international: every two-letter string looks like a country
+ * code, so "XX" would validate and then filter the search down to nothing.
+ *
+ * A bare Canadian abbreviation is accepted as shorthand only when no real country claims
+ * that code AND the prefixed form is indexed. The exact match always wins first, so once
+ * the Netherlands is harvested "NL" means the Netherlands -- never Newfoundland, which
+ * is CA-NL. Getting that precedence backwards would put the wrong country on air.
+ */
+function resolveJurisdictionHint(raw: string, allowed: ReadonlySet<string>): Jurisdiction | null {
+  const upper = raw.trim().toUpperCase();
+  if (allowed.has(upper)) return upper;
+
+  const legacy = LEGACY_CANADIAN_CODES[upper];
+  if (legacy && allowed.has(legacy)) return legacy;
+
+  return null;
+}
+
+export function coerceParse(
+  raw: ParseResponse,
+  jurisdictions: readonly string[] = CANADA_JURISDICTIONS,
+): CoercedParse {
   const discarded: string[] = [];
+  const allowed = new Set(jurisdictions);
 
   let featureTypeHint: FeatureType | null = null;
   if (raw.feature_type_hint) {
@@ -62,9 +88,8 @@ export function coerceParse(raw: ParseResponse): CoercedParse {
 
   let jurisdictionHint: Jurisdiction | null = null;
   if (raw.jurisdiction_hint) {
-    const upper = raw.jurisdiction_hint.toUpperCase();
-    if (isJurisdiction(upper)) jurisdictionHint = upper;
-    else discarded.push(`jurisdiction_hint="${raw.jurisdiction_hint}"`);
+    jurisdictionHint = resolveJurisdictionHint(raw.jurisdiction_hint, allowed);
+    if (!jurisdictionHint) discarded.push(`jurisdiction_hint="${raw.jurisdiction_hint}"`);
   }
 
   const placeNames = raw.place_names.map((n) => n.trim()).filter((n) => n.length >= 2);
@@ -80,13 +105,40 @@ export function coerceParse(raw: ParseResponse): CoercedParse {
   };
 }
 
+/**
+ * The jurisdictions offered to the model.
+ *
+ * Built from what the catalog actually holds rather than from a fixed list. Once the
+ * catalog went international a hard-coded enum stopped being possible: there are roughly
+ * 250 countries plus every subdivision harvested under them, and most of them are not
+ * indexed on any given machine. Offering codes for data that is not there teaches the
+ * model to hint at jurisdictions that can only return nothing.
+ *
+ * Defaults to Canada so the pure-module callers and the tests keep working unchanged.
+ */
+export function parseJsonSchema(jurisdictions: readonly string[] = CANADA_JURISDICTIONS): object {
+  return {
+    type: 'object',
+    properties: {
+      place_names: { type: 'array', items: { type: 'string' } },
+      feature_type_hint: { type: ['string', 'null'], enum: [...FEATURE_TYPES, null] },
+      jurisdiction_hint: { type: ['string', 'null'], enum: [...jurisdictions, null] },
+      vintage_hint: { type: ['string', 'null'] },
+      wants: { type: 'string' },
+      notes: { type: 'string' },
+    },
+    required: ['place_names', 'feature_type_hint', 'jurisdiction_hint', 'vintage_hint', 'wants', 'notes'],
+    additionalProperties: false,
+  };
+}
+
 /** JSON Schema for the structured-outputs path, matching parseResponseSchema. */
 export const PARSE_JSON_SCHEMA = {
   type: 'object',
   properties: {
     place_names: { type: 'array', items: { type: 'string' } },
     feature_type_hint: { type: ['string', 'null'], enum: [...FEATURE_TYPES, null] },
-    jurisdiction_hint: { type: ['string', 'null'], enum: [...JURISDICTIONS, null] },
+    jurisdiction_hint: { type: ['string', 'null'], enum: [...CANADA_JURISDICTIONS, null] },
     vintage_hint: { type: ['string', 'null'] },
     wants: { type: 'string' },
     notes: { type: 'string' },
@@ -95,10 +147,12 @@ export const PARSE_JSON_SCHEMA = {
   additionalProperties: false,
 } as const;
 
-export function parseSystemPrompt(): string {
+export function parseSystemPrompt(jurisdictions: readonly string[] = CANADA_JURISDICTIONS): string {
+  const canadaOnly = jurisdictions.every((j) => j === 'CA' || j.startsWith('CA-'));
+
   return [
     'You extract structured search parameters from a broadcast graphics artist’s request',
-    'for a Canadian boundary shape.',
+    canadaOnly ? 'for a Canadian boundary shape.' : 'for a boundary shape.',
     '',
     'Return ONLY a JSON object. No prose, no explanation, no markdown fences.',
     '',
@@ -109,7 +163,11 @@ export function parseSystemPrompt(): string {
     '                     "Parry Island" are both useful. Never include the request',
     '                     boilerplate ("give me the outline of").',
     '  feature_type_hint  One of the values listed below, or null if not clearly implied.',
-    '  jurisdiction_hint  Two-letter province/territory code, "CA" for federal, or null.',
+    '  jurisdiction_hint  An ISO code from the list below, or null. Countries are two',
+    '                     letters ("US"); anything inside a country is prefixed',
+    '                     ("CA-ON" is Ontario, "US-TX" is Texas). Note that a bare',
+    '                     two-letter code is ALWAYS a country: "NL" is the Netherlands,',
+    '                     not Newfoundland, which is "CA-NL".',
     '  vintage_hint       A year or representation order if one is named, else null.',
     '  wants              What is wanted, usually "outline".',
     '  notes              One short sentence on anything ambiguous, else "".',
@@ -117,8 +175,8 @@ export function parseSystemPrompt(): string {
     'feature_type_hint must be exactly one of:',
     FEATURE_TYPES.join(', '),
     '',
-    'jurisdiction_hint must be exactly one of:',
-    JURISDICTIONS.join(', '),
+    'jurisdiction_hint must be exactly one of these, which is what this catalog holds:',
+    jurisdictions.join(', '),
     '',
     'Guidance:',
     '  - In Canadian newsroom usage a bare "riding" means a federal electoral district.',

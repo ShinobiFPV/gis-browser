@@ -1,7 +1,7 @@
 import { useEffect, useState, type RefObject } from 'react';
-import type { Candidate } from '@shared/types';
+import type { Candidate, JurisdictionOption } from '@shared/types';
 import type { SearchResponse } from '@shared/ipc';
-import { FEATURE_TYPES, FEATURE_TYPE_LABELS, JURISDICTIONS, type FeatureType } from '@shared/taxonomy';
+import { FEATURE_TYPES, FEATURE_TYPE_LABELS, type FeatureType } from '@shared/taxonomy';
 import { LocatorThumb } from '../components/LocatorThumb';
 
 interface Props {
@@ -15,6 +15,46 @@ interface Props {
   hasKey: boolean;
   /** Dev harness only; see App.tsx. Runs this query on mount and picks the top hit. */
   demoQuery?: string | null;
+}
+
+/**
+ * Jurisdictions arranged as country -> its subdivisions, countries alphabetical.
+ *
+ * A subdivision whose country has nothing indexed of its own still needs somewhere to
+ * live: harvesting US states without the countries layer would otherwise leave 56 entries
+ * with no heading. Those get a synthetic group labelled with the bare country code, which
+ * is honest about what is known rather than hiding the rows.
+ */
+function jurisdictionGroups(all: JurisdictionOption[]): [JurisdictionOption, JurisdictionOption[]][] {
+  const countries = new Map<string, JurisdictionOption>();
+  const children = new Map<string, JurisdictionOption[]>();
+
+  for (const j of all) {
+    if (j.kind === 'country') countries.set(j.code, j);
+    else {
+      const parent = j.parent ?? j.code.slice(0, 2);
+      const list = children.get(parent) ?? [];
+      list.push(j);
+      children.set(parent, list);
+    }
+  }
+
+  const codes = new Set([...countries.keys(), ...children.keys()]);
+  return [...codes]
+    .map((code): [JurisdictionOption, JurisdictionOption[]] => {
+      const country = countries.get(code) ?? {
+        code,
+        label: code,
+        kind: 'country' as const,
+        parent: null,
+        feature_count: 0,
+      };
+      // The country's own row first, so "Canada (federal)" sits above its provinces.
+      const own = countries.get(code) ? [countries.get(code)!] : [];
+      const subs = (children.get(code) ?? []).sort((a, b) => a.label.localeCompare(b.label));
+      return [country, [...own, ...subs]];
+    })
+    .sort((a, b) => a[0].label.localeCompare(b[0].label));
 }
 
 /** The brief is explicit: always show the top five, never auto-export any of them. */
@@ -34,10 +74,16 @@ export function SearchPane({
   const [useLlm, setUseLlm] = useState(false);
   const [typeFilter, setTypeFilter] = useState('');
   const [jurFilter, setJurFilter] = useState('');
+  // Read once: the set only changes when something is harvested, which reloads the pane.
+  const [jurisdictions, setJurisdictions] = useState<JurisdictionOption[]>([]);
   const [response, setResponse] = useState<SearchResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [running, setRunning] = useState(false);
   const [showAll, setShowAll] = useState(false);
+
+  useEffect(() => {
+    void window.gis.jurisdictionsList().then(setJurisdictions);
+  }, []);
 
   // Dev harness: run the demo query once on mount and select its top hit.
   useEffect(() => {
@@ -119,12 +165,18 @@ export function SearchPane({
               </option>
             ))}
           </select>
+          {/* Grouped by country. A flat list worked for thirteen provinces and is
+              unusable once the catalog holds every country plus their subdivisions. */}
           <select value={jurFilter} onChange={(e) => setJurFilter(e.target.value)}>
             <option value="">anywhere</option>
-            {JURISDICTIONS.map((j) => (
-              <option key={j} value={j}>
-                {j}
-              </option>
+            {jurisdictionGroups(jurisdictions).map(([country, entries]) => (
+              <optgroup key={country.code} label={country.label}>
+                {entries.map((j) => (
+                  <option key={j.code} value={j.code}>
+                    {j.label}
+                  </option>
+                ))}
+              </optgroup>
             ))}
           </select>
         </div>

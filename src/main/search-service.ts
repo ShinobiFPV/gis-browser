@@ -1,4 +1,5 @@
 import { getDb } from '@db/index';
+import { listJurisdictions } from '@db/queries';
 import type { SearchRequest, SearchResponse } from '@shared/ipc';
 import { resolve as resolveLocal } from '@resolve/resolve';
 import { providerInfo } from '@shared/llm-providers';
@@ -67,7 +68,10 @@ export async function runSearch(req: SearchRequest): Promise<SearchResponse> {
   if (useLlm) {
     const started = Date.now();
     try {
-      const r = await llmParse(client, providerId, model, req.prompt);
+      // The codes this catalog actually holds, so the model is never offered a
+      // jurisdiction that can only filter the search down to nothing.
+      const codes = listJurisdictions(db).map((j) => j.code);
+      const r = await llmParse(client, providerId, model, req.prompt, codes.length > 0 ? codes : undefined);
       parsedOverride = r.parsed;
       notes.push(...r.notes);
     } catch (err) {

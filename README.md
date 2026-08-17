@@ -26,6 +26,13 @@ same place. Finding "Parry Island First Nation" means knowing it is filed as
 GIS Browser indexes all of it by name, then fetches only the geometry you actually ask
 for.
 
+Coverage now extends past Canada: every country on earth, and the United States broken
+down to states. Jurisdiction codes are ISO 3166 — `US` is a country, `US-TX` a state,
+`CA-ON` a province. Subdivisions carry their country prefix because five Canadian
+abbreviations are also country codes for somewhere else entirely: `NL`, `NU`, `PE`, `SK`
+and `YT` are the Netherlands, Niue, Peru, Slovakia and Mayotte. Sharing one namespace
+would not have failed — it would have quietly merged Newfoundland into the Netherlands.
+
 ## Core architectural decision: index everything, fetch geometry on demand
 
 This drives the whole design. The local database is a **searchable catalog with a geometry
@@ -250,7 +257,7 @@ npm run inspect                                              # catalog invariant
 
 ## Sources
 
-44 registered sources, all verified with a live request before being hardcoded. 37 Tier A,
+45 registered sources, all verified with a live request before being hardcoded. 38 Tier A,
 7 Tier B.
 
 | Publisher | Covers |
@@ -264,7 +271,8 @@ npm run inspect                                              # catalog invariant
 | Elections Saskatchewan | 61 provincial constituencies |
 | Government of Yukon | 21 territorial electoral districts |
 | Government of Newfoundland and Labrador | 40 provincial districts |
-| Natural Earth | Countries, lakes and rivers, as context behind a Canadian boundary |
+| Natural Earth | Every country on earth (258 features, 245 with an ISO code), plus lakes and rivers |
+| U.S. Census Bureau | All 56 states and equivalents — the 50 states, DC, Puerto Rico, Guam, American Samoa, the US Virgin Islands and the Northern Marianas |
 
 Boundary types are a **closed vocabulary** of 40 values, shared by the database CHECK
 constraint, the LLM enum and the UI filters, so they cannot drift apart. 25 of them are

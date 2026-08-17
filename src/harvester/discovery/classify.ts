@@ -1,6 +1,7 @@
 import type { FeatureType, Jurisdiction } from '@shared/taxonomy';
 import type { SourceKind } from '@shared/types';
 import { coverageOf, jurisdictionForExtent, PROVINCE_ALIASES, type LonLatBox } from '@shared/provinces';
+import { labelFor } from '@shared/jurisdictions';
 import { TYPE_PHRASES } from '@resolve/parse';
 import { normalizeText } from '../normalize/aliases';
 
@@ -131,7 +132,7 @@ export function inferJurisdiction(
   const inText = (text: string): Jurisdiction | null => {
     const norm = normalizeText(text);
     let best: { code: Jurisdiction; length: number } | null = null;
-    for (const [code, aliases] of Object.entries(PROVINCE_ALIASES) as [Jurisdiction, string[]][]) {
+    for (const [code, aliases] of Object.entries(PROVINCE_ALIASES)) {
       for (const alias of aliases) {
         // Word-boundary match, so "Ontario" does not fire inside another word.
         const pattern = new RegExp(`(^|[^a-z])${normalizeText(alias).replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}([^a-z]|$)`);
@@ -187,19 +188,19 @@ export const MIN_COVERAGE = 0.3;
  * exactly the class of error the brief is written against.
  */
 export const FEDERAL_SEATS: Partial<Record<Jurisdiction, number>> = {
-  NL: 7,
-  PE: 4,
-  NS: 11,
-  NB: 10,
-  QC: 78,
-  ON: 122,
-  MB: 14,
-  SK: 14,
-  AB: 37,
-  BC: 43,
-  YT: 1,
-  NT: 1,
-  NU: 1,
+  'CA-NL': 7,
+  'CA-PE': 4,
+  'CA-NS': 11,
+  'CA-NB': 10,
+  'CA-QC': 78,
+  'CA-ON': 122,
+  'CA-MB': 14,
+  'CA-SK': 14,
+  'CA-AB': 37,
+  'CA-BC': 43,
+  'CA-YT': 1,
+  'CA-NT': 1,
+  'CA-NU': 1,
   CA: 343,
 };
 
@@ -300,7 +301,7 @@ export function assess(input: AssessInput): { confidence: number; concerns: stri
     // Nothing in the words said Canada; only the geography suggested it. That is how a
     // North Carolina layer ends up looking Ontarian.
     concerns.push(
-      `Nothing in the title or publisher names a jurisdiction — ${input.jurisdiction} was ` +
+      `Nothing in the title or publisher names a jurisdiction — ${labelFor(input.jurisdiction)} was ` +
         `inferred from the extent alone, which border-straddling datasets get wrong.`,
     );
     confidence -= 0.15;
@@ -320,7 +321,7 @@ export function assess(input: AssessInput): { confidence: number; concerns: stri
     const coverage = coverageOf(input.extent, input.jurisdiction);
     if (coverage < MIN_COVERAGE) {
       concerns.push(
-        `Covers about ${(coverage * 100).toFixed(1)}% of ${input.jurisdiction}, but a ` +
+        `Covers about ${(coverage * 100).toFixed(1)}% of ${labelFor(input.jurisdiction)}, but a ` +
           `${input.featureType.replace(/_/g, ' ')} layer should span the whole jurisdiction. ` +
           `This looks like a local extract published under a jurisdiction-wide title` +
           `${input.publisher ? ` by ${input.publisher}` : ''}.`,
@@ -344,9 +345,9 @@ export function assess(input: AssessInput): { confidence: number; concerns: stri
     const seats = FEDERAL_SEATS[input.jurisdiction];
     if (seats !== undefined && Math.abs(input.recordCount - seats) > Math.max(3, seats * 0.15)) {
       concerns.push(
-        `Classified as a federal electoral district layer for ${input.jurisdiction}, which has ` +
+        `Classified as a federal electoral district layer for ${labelFor(input.jurisdiction)}, which has ` +
           `${seats} federal seat${seats === 1 ? '' : 's'} — but this holds ${input.recordCount} ` +
-          `features. It is far more likely to be ${input.jurisdiction}'s own provincial or ` +
+          `features. It is far more likely to be ${labelFor(input.jurisdiction)}'s own provincial or ` +
           `territorial ridings, which are different boundaries entirely.`,
       );
       confidence -= 0.45;

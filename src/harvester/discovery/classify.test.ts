@@ -72,21 +72,21 @@ describe('inferJurisdiction', () => {
 
   it('reads the province out of the title first', () => {
     expect(inferJurisdiction('Current Alberta Electoral Divisions', null, ontario)).toEqual({
-      jurisdiction: 'AB',
+      jurisdiction: 'CA-AB',
       via: 'title',
     });
   });
 
   it('falls back to the publisher', () => {
     expect(inferJurisdiction('Electoral Districts', 'Government of Newfoundland and Labrador', null)).toEqual({
-      jurisdiction: 'NL',
+      jurisdiction: 'CA-NL',
       via: 'publisher',
     });
   });
 
   it('falls back to the extent only when the words say nothing', () => {
     expect(inferJurisdiction('Electoral Districts', 'Some Org', ontario)).toEqual({
-      jurisdiction: 'ON',
+      jurisdiction: 'CA-ON',
       via: 'extent',
     });
   });
@@ -152,7 +152,7 @@ describe('assess', () => {
   const base = {
     title: 'Provincial Electoral Districts',
     featureType: 'provincial_electoral_district' as const,
-    jurisdiction: 'ON' as const,
+    jurisdiction: 'CA-ON' as const,
     extent: { minLon: -95, minLat: 42, maxLon: -75, maxLat: 56 },
     recordCount: 124,
     nameFields: ['ED_NAME'],
@@ -176,7 +176,7 @@ describe('assess', () => {
       recordCount: 5,
       publisher: 'City of Brampton',
     });
-    expect(concerns.join(' ')).toMatch(/Covers about 0\.\d% of ON/);
+    expect(concerns.join(' ')).toMatch(/Covers about 0\.\d% of Ontario/);
     expect(concerns.join(' ')).toMatch(/local extract/);
     // Must rank clearly below a clean candidate, which is what decides where the
     // validation budget goes and what a reviewer reads first.
@@ -190,12 +190,12 @@ describe('assess', () => {
       ...base,
       title: 'Yukon Electoral Districts',
       featureType: 'federal_electoral_district',
-      jurisdiction: 'YT',
+      jurisdiction: 'CA-YT',
       extent: { minLon: -141, minLat: 60, maxLon: -124, maxLat: 69 },
       recordCount: 21,
       publisher: 'Government of Yukon',
     });
-    expect(concerns.join(' ')).toMatch(/YT, which has 1 federal seat/);
+    expect(concerns.join(' ')).toMatch(/Yukon, which has 1 federal seat/);
     expect(concerns.join(' ')).toMatch(/provincial or territorial ridings/);
     expect(confidence).toBeLessThan(0.7);
   });

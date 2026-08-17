@@ -1,55 +1,86 @@
 import type { Db } from '@db/index';
 import type { FeatureType, Jurisdiction } from '@shared/taxonomy';
-import { isJurisdiction } from '@shared/taxonomy';
 import type { SourceRow } from '@shared/types';
 import { buildAliases, kindForField, type NameFieldValue } from './normalize/aliases';
 import { refineFeatureType } from './normalize/feature-type';
 import {
   countVertices,
   intersectsCanada,
-  unionBbox,
   withinCanada,
   type Bbox,
   type Geometry,
 } from './normalize/crs';
+import { bboxLobes, unionBboxWrapAware } from './normalize/antimeridian';
 import { mergeGeometries } from './geometry';
 import type { IndexedRow } from './catalogs/esri-rest';
 
 /** StatCan province/territory identifiers, used to derive per-row jurisdiction. */
 const PRUID: Record<string, Jurisdiction> = {
-  '10': 'NL',
-  '11': 'PE',
-  '12': 'NS',
-  '13': 'NB',
-  '24': 'QC',
-  '35': 'ON',
-  '46': 'MB',
-  '47': 'SK',
-  '48': 'AB',
-  '59': 'BC',
-  '60': 'YT',
-  '61': 'NT',
-  '62': 'NU',
+  '10': 'CA-NL',
+  '11': 'CA-PE',
+  '12': 'CA-NS',
+  '13': 'CA-NB',
+  '24': 'CA-QC',
+  '35': 'CA-ON',
+  '46': 'CA-MB',
+  '47': 'CA-SK',
+  '48': 'CA-AB',
+  '59': 'CA-BC',
+  '60': 'CA-YT',
+  '61': 'CA-NT',
+  '62': 'CA-NU',
 };
 
 const PROVINCE_NAMES: Record<string, Jurisdiction> = {
-  alberta: 'AB',
-  'british columbia': 'BC',
-  manitoba: 'MB',
-  'new brunswick': 'NB',
-  'newfoundland and labrador': 'NL',
-  'nova scotia': 'NS',
-  'northwest territories': 'NT',
-  nunavut: 'NU',
-  ontario: 'ON',
-  'prince edward island': 'PE',
-  quebec: 'QC',
-  québec: 'QC',
-  saskatchewan: 'SK',
-  yukon: 'YT',
+  alberta: 'CA-AB',
+  'british columbia': 'CA-BC',
+  manitoba: 'CA-MB',
+  'new brunswick': 'CA-NB',
+  'newfoundland and labrador': 'CA-NL',
+  'nova scotia': 'CA-NS',
+  'northwest territories': 'CA-NT',
+  nunavut: 'CA-NU',
+  ontario: 'CA-ON',
+  'prince edward island': 'CA-PE',
+  quebec: 'CA-QC',
+  québec: 'CA-QC',
+  saskatchewan: 'CA-SK',
+  yukon: 'CA-YT',
 };
 
-function deriveJurisdiction(attrs: Record<string, unknown>, fallback: string | null): string | null {
+/** A string attribute, trimmed, or null. Numbers count -- FIPS codes arrive as both. */
+function attrText(attrs: Record<string, unknown>, field: string): string | null {
+  const v = attrs[field];
+  if (typeof v === 'string') return v.trim() || null;
+  if (typeof v === 'number' && Number.isFinite(v)) return String(v);
+  return null;
+}
+
+/**
+ * The ISO 3166-1 alpha-2 code a Natural Earth country row is about.
+ *
+ * ISO_A2 is the obvious field and is not reliable on its own: Natural Earth writes -99
+ * into it for entities whose status is contested or which have no code of their own.
+ * ISO_A2_EH is the same field with those cases resolved where a resolution exists, so it
+ * is tried first. Anything still unresolved returns null and the feature is indexed with
+ * no jurisdiction rather than a made-up one -- an unlabelled country is findable by
+ * name, whereas a wrong code silently files it under a real country that it is not.
+ */
+function countryCode(attrs: Record<string, unknown>): string | null {
+  for (const field of ['ISO_A2_EH', 'ISO_A2', 'WB_A2']) {
+    const raw = attrText(attrs, field);
+    if (!raw) continue;
+    const code = raw.toUpperCase();
+    if (/^[A-Z]{2}$/.test(code)) return code;
+  }
+  return null;
+}
+
+function deriveJurisdiction(
+  attrs: Record<string, unknown>,
+  fallback: string | null,
+  featureType: FeatureType,
+): string | null {
   const pruid = attrs['PRUID'];
   if (typeof pruid === 'string' || typeof pruid === 'number') {
     const mapped = PRUID[String(pruid).trim()];
@@ -60,7 +91,31 @@ function deriveJurisdiction(attrs: Record<string, unknown>, fallback: string | n
     const mapped = PROVINCE_NAMES[jur.trim().toLowerCase()];
     if (mapped) return mapped;
   }
-  return fallback && isJurisdiction(fallback) ? fallback : fallback;
+
+  /*
+   * US Census layers carry STUSAB, the two-letter state abbreviation, which becomes the
+   * ISO 3166-2 subdivision code by prefixing the country. This is only trusted when the
+   * source already says it is American: STUSAB is a common enough column name that
+   * matching on it alone would file some other country's data under a US state.
+   */
+  if (fallback === 'US' || fallback?.startsWith('US-')) {
+    const stusab = attrText(attrs, 'STUSAB');
+    if (stusab && /^[A-Za-z]{2}$/.test(stusab)) return `US-${stusab.toUpperCase()}`;
+  }
+
+  /*
+   * A country layer labels each feature with its own code, not the source's.
+   *
+   * Gated on the feature type rather than tried for everything: ISO_A2 is a common
+   * enough column that a provincial layer carrying one would have every row re-filed
+   * under a country, and the failure would be invisible.
+   */
+  if (featureType === 'country') {
+    const iso = countryCode(attrs);
+    if (iso) return iso;
+  }
+
+  return fallback;
 }
 
 function pickOfficialName(attrs: Record<string, unknown>, nameFields: string[]): string | null {
@@ -122,8 +177,12 @@ export interface IngestOptions {
    * that borders Canada, and demanding containment would null its bbox and make it
    * invisible to every spatial query. Tier B gets a stronger CRS check anyway -- if the
    * whole layer reprojects outside Canada, run-bulk fails the harvest outright.
+   *
+   * 'any' is right for a world source. There is no envelope to check against: the United
+   * States really does reach 179.8 degrees east, and rejecting that would null the bbox
+   * of the very features international support exists to index.
    */
-  bboxPolicy?: 'within' | 'intersects';
+  bboxPolicy?: 'within' | 'intersects' | 'any';
 }
 
 export function emptyStats(): IngestStats {
@@ -175,7 +234,16 @@ export function createIngestor(db: Db, source: SourceRow, options: IngestOptions
   const nameFields: string[] = source.name_fields ? (JSON.parse(source.name_fields) as string[]) : [];
   const identityField = source.identity_field;
   const namelessRows = options.namelessRows ?? 'throw';
-  const bboxPolicy = options.bboxPolicy ?? 'within';
+  /*
+   * The default follows the SOURCE, not the call site.
+   *
+   * It used to be a flat 'within', which silently meant "inside Canada" for every caller
+   * that did not override it. The first non-Canadian Tier A source hit exactly that: all
+   * 56 US states had their bounding box rejected -- "latitude 25.833..36.505 outside
+   * 41..84" for Texas -- because two of the three createIngestor call sites take the
+   * default. Deriving it here means a new caller cannot forget.
+   */
+  const bboxPolicy = options.bboxPolicy ?? (source.region === 'world' ? 'any' : 'within');
   const stats = emptyStats();
 
   const selectExisting = db.prepare(
@@ -203,6 +271,7 @@ export function createIngestor(db: Db, source: SourceRow, options: IngestOptions
   const upsertRtree = db.prepare(
     'INSERT OR REPLACE INTO features_rtree (id, minx, maxx, miny, maxy) VALUES (?, ?, ?, ?, ?)',
   );
+  const clearRtree = db.prepare('DELETE FROM features_rtree WHERE id IN (?, ?)');
   const upsertGeometry = db.prepare(`
     INSERT INTO geometries
       (feature_id, geometry_json, vertex_count, source_srid, content_hash, cached_at, generalisation_deg)
@@ -251,7 +320,12 @@ export function createIngestor(db: Db, source: SourceRow, options: IngestOptions
     // Reject nonsense geometry rather than poisoning the R-tree with it.
     let bbox: Bbox | null = row.bbox;
     if (bbox) {
-      const ok = bboxPolicy === 'intersects' ? intersectsCanada(bbox) : withinCanada(bbox).ok;
+      const ok =
+        bboxPolicy === 'any'
+          ? true
+          : bboxPolicy === 'intersects'
+            ? intersectsCanada(bbox)
+            : withinCanada(bbox).ok;
       if (!ok) {
         stats.bboxRejected++;
         const reason =
@@ -273,7 +347,9 @@ export function createIngestor(db: Db, source: SourceRow, options: IngestOptions
         existing.minx !== null && existing.miny !== null && existing.maxx !== null && existing.maxy !== null
           ? { minx: existing.minx, miny: existing.miny, maxx: existing.maxx, maxy: existing.maxy }
           : null;
-      bbox = unionBbox(prior, bbox);
+      // Wrap-aware: a plain union of the two lobes of an antimeridian-crossing feature
+      // throws the wrap away and hands back the whole planet again.
+      bbox = unionBboxWrapAware(prior, bbox);
     }
 
     const featureType: FeatureType = refineFeatureType({
@@ -287,7 +363,7 @@ export function createIngestor(db: Db, source: SourceRow, options: IngestOptions
       source_feature_id: key,
       official_name: officialName,
       feature_type: featureType,
-      jurisdiction: deriveJurisdiction(attrs, source.jurisdiction),
+      jurisdiction: deriveJurisdiction(attrs, source.jurisdiction, featureType),
       attributes_json: JSON.stringify(attrs),
       minx: bbox?.minx ?? null,
       miny: bbox?.miny ?? null,
@@ -299,7 +375,21 @@ export function createIngestor(db: Db, source: SourceRow, options: IngestOptions
     const rowId = (existing?.id ?? (selectExisting.get(source.id, key) as { id: number }).id);
     if (!existing) stats.featuresWritten++;
 
-    if (bbox) upsertRtree.run(rowId, bbox.minx, bbox.maxx, bbox.miny, bbox.maxy);
+    /*
+     * One R-tree row per lobe.
+     *
+     * SQLite's rtree enforces minx <= maxx, so an antimeridian-crossing extent physically
+     * cannot go in as a single row -- Alaska fails the constraint outright. Splitting it
+     * is also what makes a spatial query over Attu work at all. Slots are rowId*2 and
+     * rowId*2+1; see migration 8. Both are cleared first, because a feature that wrapped
+     * on a previous harvest may not wrap on this one.
+     */
+    clearRtree.run(rowId * 2, rowId * 2 + 1);
+    if (bbox) {
+      bboxLobes(bbox).forEach((lobe, i) => {
+        upsertRtree.run(rowId * 2 + i, lobe.minx, lobe.maxx, lobe.miny, lobe.maxy);
+      });
+    }
 
     // Aliases are rebuilt rather than appended, so a re-harvest cannot accumulate stale
     // names from a previous vintage of the same feature.

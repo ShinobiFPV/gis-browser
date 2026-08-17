@@ -85,7 +85,7 @@ describe('coerceParse', () => {
       notes: '',
     });
     expect(c.featureTypeHint).toBe('indian_reserve');
-    expect(c.jurisdictionHint).toBe('ON');
+    expect(c.jurisdictionHint).toBe('CA-ON');
     expect(c.vintageHint).toBe('2023');
     expect(c.discarded).toEqual([]);
   });
@@ -106,7 +106,10 @@ describe('coerceParse', () => {
   });
 
   it('accepts a lowercase province code and drops an invalid one', () => {
-    expect(coerceParse({ ...base(), jurisdiction_hint: 'on' }).jurisdictionHint).toBe('ON');
+    // A bare provincial abbreviation is shorthand for the prefixed code, accepted only
+    // because no country owns 'ON'. See resolveJurisdictionHint.
+    expect(coerceParse({ ...base(), jurisdiction_hint: 'on' }).jurisdictionHint).toBe('CA-ON');
+    expect(coerceParse({ ...base(), jurisdiction_hint: 'CA-ON' }).jurisdictionHint).toBe('CA-ON');
     expect(coerceParse({ ...base(), jurisdiction_hint: 'Ontario' }).jurisdictionHint).toBeNull();
     expect(coerceParse({ ...base(), jurisdiction_hint: 'XX' }).discarded).toHaveLength(1);
   });
