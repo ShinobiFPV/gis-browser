@@ -36,6 +36,26 @@ export interface Preferences {
    * shouldShowWizard.
    */
   firstRunCompletedAt: string | null;
+
+  /**
+   * Whether to ask GitHub for the latest release on startup. On by default, and a single
+   * request every six hours at most -- but it IS a network call the app makes on its own,
+   * so it is disclosed in Settings and can be switched off.
+   */
+  updateCheckEnabled: boolean;
+  lastUpdateCheckAt: string | null;
+  /** A version the user chose to ignore. A later one still surfaces. */
+  skippedUpdateVersion: string | null;
+  /**
+   * The last release seen, persisted rather than held in memory.
+   *
+   * Checks are throttled to one every six hours. Without persisting the result, a restart
+   * inside that window would find nothing to report and the update would vanish from the
+   * UI until the throttle expired.
+   */
+  lastKnownVersion: string | null;
+  lastKnownReleaseUrl: string | null;
+  lastKnownPublishedAt: string | null;
 }
 
 function defaultExportFolder(): string {
@@ -52,6 +72,12 @@ const DEFAULTS: Preferences = {
   anthropicModel: DEFAULT_MODEL,
   exportFolder: '',
   firstRunCompletedAt: null,
+  updateCheckEnabled: true,
+  lastUpdateCheckAt: null,
+  skippedUpdateVersion: null,
+  lastKnownVersion: null,
+  lastKnownReleaseUrl: null,
+  lastKnownPublishedAt: null,
 };
 
 let cache: Preferences | null = null;
@@ -90,6 +116,15 @@ function load(): Preferences {
           : defaultExportFolder(),
       firstRunCompletedAt:
         typeof raw.firstRunCompletedAt === 'string' ? raw.firstRunCompletedAt : null,
+      updateCheckEnabled:
+        typeof raw.updateCheckEnabled === 'boolean' ? raw.updateCheckEnabled : DEFAULTS.updateCheckEnabled,
+      lastUpdateCheckAt: typeof raw.lastUpdateCheckAt === 'string' ? raw.lastUpdateCheckAt : null,
+      skippedUpdateVersion:
+        typeof raw.skippedUpdateVersion === 'string' ? raw.skippedUpdateVersion : null,
+      lastKnownVersion: typeof raw.lastKnownVersion === 'string' ? raw.lastKnownVersion : null,
+      lastKnownReleaseUrl: typeof raw.lastKnownReleaseUrl === 'string' ? raw.lastKnownReleaseUrl : null,
+      lastKnownPublishedAt:
+        typeof raw.lastKnownPublishedAt === 'string' ? raw.lastKnownPublishedAt : null,
     };
   } catch {
     console.warn('[settings] preferences.json is unreadable; using defaults');

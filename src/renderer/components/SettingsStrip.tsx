@@ -1,5 +1,6 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import type { AppSettings } from '@shared/types';
+import type { UpdateStatus } from '@shared/ipc';
 import { LLM_PROVIDERS, modelInfo, providerInfo } from '@shared/llm-providers';
 
 interface Props {
@@ -22,6 +23,13 @@ export function SettingsStrip({ settings, onChanged, onClose }: Props): React.JS
   const [key, setKey] = useState('');
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
+  const [update, setUpdate] = useState<UpdateStatus | null>(null);
+  const [checking, setChecking] = useState(false);
+
+  // Read, never triggered: opening Settings should not itself cause a network call.
+  useEffect(() => {
+    void window.gis.updateStatus().then(setUpdate);
+  }, []);
 
   const provider = providerInfo(settings.llmProvider);
   const model = modelInfo(provider.id, settings.llmModel);
@@ -189,6 +197,50 @@ export function SettingsStrip({ settings, onChanged, onClose }: Props): React.JS
             This model cannot be schema-constrained, so a malformed reply falls back to the local parser.
           </span>
         )}
+      </div>
+
+      {/* Update checking is the one thing the app does on the network unprompted, so it
+          says so plainly and can be switched off. */}
+      <div className="settings-row">
+        <label className="toggle">
+          <input
+            type="checkbox"
+            checked={update?.enabled ?? true}
+            disabled={busy}
+            onChange={(e) => void window.gis.updateSetEnabled(e.target.checked).then(setUpdate)}
+          />
+          Check for updates automatically
+        </label>
+
+        <button
+          disabled={busy || checking}
+          onClick={() => {
+            setChecking(true);
+            void window.gis
+              .updateCheck()
+              .then(setUpdate)
+              .finally(() => setChecking(false));
+          }}
+        >
+          {checking ? 'Checking…' : 'Check now'}
+        </button>
+
+        <span className="dim">
+          {update?.error
+            ? `Last check failed: ${update.error}`
+            : update?.latestVersion
+              ? update.updateAvailable
+                ? `Version ${update.latestVersion} is available.`
+                : `Up to date — running ${update.currentVersion}.`
+              : `Running ${update?.currentVersion ?? '…'}.`}
+        </span>
+      </div>
+
+      <div className="settings-note">
+        When enabled, the app asks GitHub for the latest release — at most once every six hours, and
+        never more than that. It sends nothing about you and nothing about your catalog. Updates are
+        never downloaded or installed automatically: the builds are unsigned, so installing stays a
+        deliberate act.
       </div>
 
       <div className="settings-note">

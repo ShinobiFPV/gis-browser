@@ -21,6 +21,7 @@ import { runSearch } from './search-service';
 import { runExport } from './export-service';
 import { decideCandidate, listDiscovered, runDiscoveryJob } from './discovery-service';
 import { selectStarterSources, shouldShowWizard } from './first-run';
+import { checkForUpdates, getUpdateStatus, setUpdateChecksEnabled, skipVersion } from './updates';
 import { isProviderId, LLM_PROVIDERS, providerInfo } from '@shared/llm-providers';
 import { getSetting, setSetting } from './settings';
 
@@ -116,6 +117,44 @@ export function registerIpc(win: BrowserWindow, ctx: { dbPath: string; dataDir: 
     db.prepare('DELETE FROM bulk_downloads WHERE source_id = ?').run(sourceId);
     console.log(`[downloads] removed ${row.local_path}, freed ${freedBytes} bytes`);
     return { ok: true, freedBytes };
+  });
+
+  // --- update checks ---------------------------------------------------------------
+  // Checking only. Nothing is downloaded or installed: that needs code signing, and on
+  // macOS Squirrel refuses an unsigned update outright.
+  ipcMain.handle(CH.updateStatus, () => getUpdateStatus());
+
+  ipcMain.handle(CH.updateCheck, () => checkForUpdates({ force: true }));
+
+  ipcMain.handle(CH.updateSkip, (_e, version: unknown) => {
+    if (typeof version !== 'string' || !version.trim()) throw new Error('update:skip expects a version');
+    return skipVersion(version.trim());
+  });
+
+  ipcMain.handle(CH.updateSetEnabled, (_e, enabled: unknown) => {
+    if (typeof enabled !== 'boolean') throw new Error('update:setEnabled expects a boolean');
+    return setUpdateChecksEnabled(enabled);
+  });
+
+  /**
+   * Opens a release page in the real browser.
+   *
+   * Restricted to the project's own releases. This channel takes a URL from the renderer,
+   * and shell.openExternal will happily launch anything -- including a file:// or a
+   * custom protocol handler. Only one host is ever a legitimate destination here.
+   */
+  ipcMain.handle(CH.updateOpen, async (_e, url: unknown) => {
+    if (typeof url !== 'string') throw new Error('update:open expects a URL');
+    let parsed: URL;
+    try {
+      parsed = new URL(url);
+    } catch {
+      throw new Error(`Refusing to open a malformed URL: ${url}`);
+    }
+    if (parsed.protocol !== 'https:' || parsed.host !== 'github.com') {
+      throw new Error(`Refusing to open ${parsed.host || url}; only github.com release pages are allowed`);
+    }
+    await shell.openExternal(parsed.toString());
   });
 
   // --- M8 first run ---------------------------------------------------------------

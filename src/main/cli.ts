@@ -12,6 +12,7 @@ import { runExport } from './export-service';
 import { DEFAULT_SVG_SRID } from '@shared/projections';
 import { asText } from '@shared/scalar';
 import { runDiscovery } from '../harvester/discovery/run-discovery';
+import { checkForUpdates } from './updates';
 import { DISCOVERY_CATALOGS } from '@db/seed/sources';
 
 /** The CKAN portals discovery walks. Hub is always crawled and needs no root. */
@@ -61,6 +62,8 @@ interface Args {
   discover: string[];
   /** Show what discovery has already found, best first. */
   candidates: boolean;
+  /** Ask GitHub whether a newer release exists. */
+  checkUpdates: boolean;
 }
 
 function parseArgs(argv: string[]): Args {
@@ -79,6 +82,7 @@ function parseArgs(argv: string[]): Args {
     featureIds: [],
     discover: [],
     candidates: false,
+    checkUpdates: false,
   };
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
@@ -118,6 +122,8 @@ function parseArgs(argv: string[]): Args {
       i++;
     } else if (a === '--candidates') {
       out.candidates = true;
+    } else if (a === '--check-updates') {
+      out.checkUpdates = true;
     } else if (a === '--list') {
       out.list = true;
     } else if (a === '--llm') {
@@ -304,6 +310,18 @@ async function main(): Promise<number> {
     for (const w of result.warnings) console.log(`  WARNING: ${w}`);
     closeDb();
     return 0;
+  }
+
+  if (args.checkUpdates) {
+    const status = await checkForUpdates({ force: true });
+    console.log(`[cli] running ${status.currentVersion}`);
+    console.log(`      latest   ${status.latestVersion ?? '(unknown)'}`);
+    console.log(`      update available: ${status.updateAvailable}`);
+    console.log(`      release  ${status.releaseUrl ?? '—'}`);
+    console.log(`      published ${status.publishedAt ?? '—'}`);
+    if (status.error) console.log(`      error: ${status.error}`);
+    closeDb();
+    return status.error ? 1 : 0;
   }
 
   if (args.candidates) {

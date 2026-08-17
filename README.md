@@ -184,6 +184,16 @@ On first launch the wizard offers a starter harvest. The essential set (~22 sour
 ridings, provinces, reserves, municipalities, census subdivisions) takes a few minutes.
 Bulk downloads are never started for you.
 
+### Updates
+
+The app checks GitHub for a newer release on startup — at most once every six hours — and
+shows a dismissible banner if one exists. It **checks only**: nothing is downloaded or
+installed automatically, because auto-installing requires code signing and macOS refuses
+an unsigned update outright. Installing stays the same manual step it was the first time.
+
+The check sends nothing about you and nothing about your catalog, and it can be switched
+off in Settings. `--check-updates` runs it from the CLI.
+
 ### Build from source
 
 Requires Node 20+. Each installer must be built on its own platform — electron-builder
@@ -231,6 +241,7 @@ electron out/main/cli.js --find "Nunavut" --export svg --retention 5
 electron out/main/cli.js --feature 3623 --feature 3624 --export geojson
 electron out/main/cli.js --discover "Manitoba electoral divisions"
 electron out/main/cli.js --candidates                        # review what discovery found
+electron out/main/cli.js --check-updates                     # ask GitHub for the latest release
 
 npm run inspect                                              # catalog invariants
 ```

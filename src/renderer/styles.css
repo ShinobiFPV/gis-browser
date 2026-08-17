@@ -1063,3 +1063,38 @@ b.dim {
 .settings-row + .settings-row {
   margin-top: 6px;
 }
+
+/* --- update banner --- */
+
+.update-banner {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 5px 10px;
+  font-size: 11px;
+  color: var(--text);
+  background: #16283d;
+  border-bottom: 1px solid var(--accent-dim);
+  flex: none;
+}
+
+.update-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--accent);
+  flex: none;
+}
+
+.update-banner .dim {
+  color: var(--text-faint);
+  font-size: 10px;
+}
+
+.update-banner .link-button {
+  display: inline;
+  width: auto;
+  border-bottom: 0;
+  padding: 0 4px;
+  color: var(--accent);
+}

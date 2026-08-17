@@ -2,6 +2,7 @@ import { join } from 'node:path';
 import { app, BrowserWindow, screen, shell } from 'electron';
 import { closeDb, openDb } from '@db/index';
 import { registerIpc } from './ipc';
+import { scheduleStartupCheck } from './updates';
 import { killHarvest } from './harvester-host';
 
 /**
@@ -161,6 +162,14 @@ void app.whenReady().then(() => {
   console.log('[main] database open; creating window');
   createWindow(dbPath, dataDir);
   console.log('[main] window created');
+
+  // Background, delayed, and never blocking: the first seconds after launch belong to
+  // opening the catalog and painting a window. The renderer polls update:status.
+  scheduleStartupCheck((status) => {
+    if (status.updateAvailable) {
+      console.log(`[main] update available: ${status.latestVersion ?? '?'}`);
+    }
+  });
 
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow(dbPath, dataDir);

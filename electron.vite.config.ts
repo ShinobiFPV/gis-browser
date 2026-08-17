@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { defineConfig, externalizeDepsPlugin } from 'electron-vite';
 import react from '@vitejs/plugin-react';
@@ -9,8 +10,22 @@ const alias = {
   '@export': resolve('src/export'),
 };
 
+/**
+ * The app version, baked in at build time.
+ *
+ * Not app.getVersion(): that reads the manifest at the APP PATH, which for
+ * `electron out/main/cli.js` is a directory with no package.json -- so it silently
+ * returns Electron's own version instead. The update check compares this against the
+ * latest release, and a wrong answer either hides a real update or nags about one that
+ * does not exist.
+ */
+const appVersion = (JSON.parse(readFileSync(resolve('package.json'), 'utf8')) as { version: string }).version;
+
+const define = { __APP_VERSION__: JSON.stringify(appVersion) };
+
 export default defineConfig({
   main: {
+    define,
     plugins: [externalizeDepsPlugin()],
     resolve: { alias },
     build: {
@@ -28,6 +43,7 @@ export default defineConfig({
     },
   },
   preload: {
+    define,
     plugins: [externalizeDepsPlugin()],
     resolve: { alias },
     build: {
@@ -37,6 +53,7 @@ export default defineConfig({
     },
   },
   renderer: {
+    define,
     root: resolve('src/renderer'),
     resolve: { alias },
     plugins: [react()],

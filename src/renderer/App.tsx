@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { AppSettings, Candidate, HarvestProgress, SourceRow } from '@shared/types';
-import type { FirstRunStatus, GeometryResult, LogLine } from '@shared/ipc';
+import type { FirstRunStatus, GeometryResult, LogLine, UpdateStatus } from '@shared/ipc';
 import { SourcesPane } from './panes/SourcesPane';
 import { SearchPane } from './panes/SearchPane';
 import { PreviewPane } from './panes/PreviewPane';
@@ -8,6 +8,7 @@ import { ExportPane } from './panes/ExportPane';
 import { SettingsStrip } from './components/SettingsStrip';
 import { FirstRunWizard } from './components/FirstRunWizard';
 import { providerInfo } from '@shared/llm-providers';
+import { UpdateBanner } from './components/UpdateBanner';
 
 export function App(): React.JSX.Element {
   const [settings, setSettings] = useState<AppSettings | null>(null);
@@ -23,6 +24,7 @@ export function App(): React.JSX.Element {
   );
 
   const [firstRun, setFirstRun] = useState<FirstRunStatus | null>(null);
+  const [update, setUpdate] = useState<UpdateStatus | null>(null);
 
   const promptRef = useRef<HTMLTextAreaElement>(null);
 
@@ -46,6 +48,11 @@ export function App(): React.JSX.Element {
     void refreshSettings();
     void refreshSources();
     void window.gis.firstRunStatus().then(setFirstRun);
+    void window.gis.updateStatus().then(setUpdate);
+
+    // The startup check runs in main after a delay, so ask again once it has had time.
+    // Polling beats an event here: one extra call at launch against a whole extra channel.
+    const updateTimer = setTimeout(() => void window.gis.updateStatus().then(setUpdate), 12_000);
 
     const offProgress = window.gis.onHarvestProgress((p) => {
       setProgress((prev) => ({ ...prev, [p.sourceId]: p }));
@@ -56,6 +63,7 @@ export function App(): React.JSX.Element {
     return () => {
       offProgress();
       offLog();
+      clearTimeout(updateTimer);
     };
   }, [refreshSources, refreshSettings]);
 
@@ -99,6 +107,8 @@ export function App(): React.JSX.Element {
           }}
         />
       )}
+
+      {update && <UpdateBanner status={update} onChanged={setUpdate} />}
 
       <header className="titlebar">
         <div className="brand">

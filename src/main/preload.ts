@@ -41,6 +41,11 @@ const bridge: GisBridge = {
   exportPreview: (req: ExportRequest) => ipcRenderer.invoke(CH.exportPreview, req),
   exportReveal: (path: string) => ipcRenderer.invoke(CH.exportReveal, path),
   exportSetFolder: () => ipcRenderer.invoke(CH.exportSetFolder),
+  updateStatus: () => ipcRenderer.invoke(CH.updateStatus),
+  updateCheck: () => ipcRenderer.invoke(CH.updateCheck),
+  updateSkip: (version: string) => ipcRenderer.invoke(CH.updateSkip, version),
+  updateSetEnabled: (enabled: boolean) => ipcRenderer.invoke(CH.updateSetEnabled, enabled),
+  updateOpen: (url: string) => ipcRenderer.invoke(CH.updateOpen, url),
 
   onHarvestProgress: (cb: (p: HarvestProgress) => void) => {
     const handler = (_e: unknown, p: HarvestProgress) => cb(p);

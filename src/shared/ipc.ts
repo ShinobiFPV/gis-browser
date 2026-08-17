@@ -29,6 +29,11 @@ export const CH = {
   exportPreview: 'export:preview',
   exportReveal: 'export:reveal',
   exportSetFolder: 'export:setFolder',
+  updateStatus: 'update:status',
+  updateCheck: 'update:check',
+  updateSkip: 'update:skip',
+  updateSetEnabled: 'update:setEnabled',
+  updateOpen: 'update:open',
 
   // main -> renderer events
   harvestProgress: 'harvest:progress',
@@ -78,6 +83,21 @@ export interface GeometryResult {
    * this is a provenance fact about what we were able to retrieve.
    */
   generalisationDeg: number | null;
+}
+
+/** What the app knows about available releases. Checking only -- nothing is installed. */
+export interface UpdateStatus {
+  currentVersion: string;
+  /** null when no check has succeeded yet. */
+  latestVersion: string | null;
+  updateAvailable: boolean;
+  releaseUrl: string | null;
+  publishedAt: string | null;
+  checkedAt: string | null;
+  enabled: boolean;
+  skippedVersion: string | null;
+  /** Set when the last check failed. Being offline is normal and not shown unprompted. */
+  error: string | null;
 }
 
 /** A change to which model answers, from the Settings strip. */
@@ -226,6 +246,11 @@ export interface GisBridge {
   exportPreview(req: ExportRequest): Promise<ExportResult>;
   exportReveal(path: string): Promise<void>;
   exportSetFolder(): Promise<{ ok: boolean; folder?: string }>;
+  updateStatus(): Promise<UpdateStatus>;
+  updateCheck(): Promise<UpdateStatus>;
+  updateSkip(version: string): Promise<UpdateStatus>;
+  updateSetEnabled(enabled: boolean): Promise<UpdateStatus>;
+  updateOpen(url: string): Promise<void>;
   onHarvestProgress(cb: (p: HarvestProgress) => void): () => void;
   onExportProgress(cb: (p: ExportProgress) => void): () => void;
   onLog(cb: (l: LogLine) => void): () => void;
