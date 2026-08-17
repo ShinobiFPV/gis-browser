@@ -1,6 +1,6 @@
 {
   "name": "gis-browser",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Plain-language search for official Canadian boundary geometry, for broadcast graphics",
   "author": "ShinTech Electronics",
   "license": "MIT",

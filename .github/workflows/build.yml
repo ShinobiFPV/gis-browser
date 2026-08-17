@@ -184,14 +184,19 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           # --notes is the documented way to prepend text to --generate-notes output.
+          #
+          # The heredoc stays QUOTED and the version goes in as a placeholder, expanded
+          # below. The notes contain a fenced code block, and in an unquoted heredoc those
+          # backticks are command substitution -- the fences would run as commands and the
+          # xattr line would vanish from the release.
           NOTES=$(cat <<'EOF'
           ## Downloads
 
           | Platform | File |
           |---|---|
-          | Windows x64 | `GIS Browser-<version>-setup.exe` |
-          | macOS Apple silicon | `GIS Browser-<version>-arm64.dmg` |
-          | macOS Intel | `GIS Browser-<version>-x64.dmg` |
+          | Windows x64 | `GIS.Browser-__V__-setup.exe` |
+          | macOS Apple silicon | `GIS.Browser-__V__-arm64.dmg` |
+          | macOS Intel | `GIS.Browser-__V__-x64.dmg` |
 
           ## Both builds are unsigned
 
@@ -215,6 +220,10 @@ jobs:
           geometry is fetched from the source when you export something, and cached.
           EOF
           )
+
+          # Tag minus the v. The filenames above have to name assets that really exist,
+          # and GitHub rewrites the space in "GIS Browser" to a dot when it stores them.
+          NOTES="${NOTES//__V__/${GITHUB_REF_NAME#v}}"
 
           # --repo is required: this job does not check the repository out, so gh has no
           # git remote to infer it from.
