@@ -3,6 +3,7 @@ import { dialog, ipcMain, shell, type BrowserWindow } from 'electron';
 import {
   CH,
   type BulkDownload,
+  type DiscoveryRunRequest,
   type ExportRequest,
   type ExportResult,
   type SearchRequest,
@@ -16,6 +17,7 @@ import { cancelHarvest, startHarvest } from './harvester-host';
 import { getGeometry } from './geometry-service';
 import { runSearch } from './search-service';
 import { runExport } from './export-service';
+import { decideCandidate, listDiscovered, runDiscoveryJob } from './discovery-service';
 import { MODELS } from './anthropic';
 import { getSetting, setSetting } from './settings';
 
@@ -108,6 +110,30 @@ export function registerIpc(win: BrowserWindow, ctx: { dbPath: string; dataDir: 
     db.prepare('DELETE FROM bulk_downloads WHERE source_id = ?').run(sourceId);
     console.log(`[downloads] removed ${row.local_path}, freed ${freedBytes} bytes`);
     return { ok: true, freedBytes };
+  });
+
+  // --- M7 discovery -------------------------------------------------------------
+  ipcMain.handle(CH.discoveryRun, async (_e, req: DiscoveryRunRequest) => {
+    return runDiscoveryJob(req, (p) => {
+      if (!win.isDestroyed()) {
+        win.webContents.send(CH.log, {
+          level: 'info',
+          scope: 'discovery',
+          message: `${p.phase} ${p.catalog} seen=${p.seen} kept=${p.kept} ${p.message}`,
+          at: new Date().toISOString(),
+        });
+      }
+    });
+  });
+
+  ipcMain.handle(CH.discoveryList, () => listDiscovered());
+
+  ipcMain.handle(CH.discoveryDecide, (_e, id: unknown, decision: unknown) => {
+    if (typeof id !== 'number') throw new Error('discovery:decide expects a numeric id');
+    if (decision !== 'accepted' && decision !== 'rejected') {
+      throw new Error('discovery:decide expects "accepted" or "rejected"');
+    }
+    return decideCandidate(id, decision);
   });
 
   ipcMain.handle(CH.harvestStart, (_e, sourceIds: unknown) => {

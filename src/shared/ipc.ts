@@ -15,6 +15,9 @@ export const CH = {
   sourcesSetStatus: 'sources:setStatus',
   downloadsList: 'downloads:list',
   downloadsRemove: 'downloads:remove',
+  discoveryRun: 'discovery:run',
+  discoveryList: 'discovery:list',
+  discoveryDecide: 'discovery:decide',
   harvestStart: 'harvest:start',
   harvestCancel: 'harvest:cancel',
   searchRun: 'search:run',
@@ -72,6 +75,43 @@ export interface GeometryResult {
    * this is a provenance fact about what we were able to retrieve.
    */
   generalisationDeg: number | null;
+}
+
+/**
+ * A source the crawlers proposed. Never harvested or searched until someone accepts it.
+ */
+export interface DiscoveredRow {
+  id: number;
+  catalog: string;
+  title: string;
+  endpoint: string;
+  layerId: string;
+  kind: string;
+  publisher: string | null;
+  featureType: string | null;
+  jurisdiction: string | null;
+  nameFields: string[];
+  liveCount: number | null;
+  confidence: number;
+  concerns: string[];
+  validated: boolean;
+  validationError: string | null;
+  decision: 'new' | 'accepted' | 'rejected';
+}
+
+export interface DiscoveryRunRequest {
+  queries: string[];
+  maxValidations?: number;
+}
+
+export interface DiscoveryRunResult {
+  seen: number;
+  kept: number;
+  duplicates: number;
+  validated: number;
+  reachable: number;
+  written: number;
+  warnings: string[];
 }
 
 /** A Tier B archive sitting on disk. */
@@ -150,6 +190,9 @@ export interface GisBridge {
   sourcesSetStatus(id: number, status: SourceRow['status']): Promise<void>;
   downloadsList(): Promise<BulkDownload[]>;
   downloadsRemove(sourceId: number): Promise<{ ok: boolean; freedBytes: number }>;
+  discoveryRun(req: DiscoveryRunRequest): Promise<DiscoveryRunResult>;
+  discoveryList(): Promise<DiscoveredRow[]>;
+  discoveryDecide(id: number, decision: 'accepted' | 'rejected'): Promise<{ ok: boolean; error?: string }>;
   harvestStart(sourceIds: number[]): Promise<{ ok: boolean; error?: string }>;
   harvestCancel(): Promise<void>;
   searchRun(req: SearchRequest): Promise<SearchResponse>;

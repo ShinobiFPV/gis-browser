@@ -310,6 +310,70 @@ const PROVINCIAL: SeedSource[] = [
     verifiedAt: VERIFIED_AT,
     notes: 'Served in EPSG:3857 -- reprojection required. Licence not stated on the service; confirm before air.',
   }),
+  // ---------------------------------------------------------------------------
+  // Found by the M7 crawlers, then verified individually the same way every
+  // hand-seeded endpoint was: layer metadata read, count queried, and sample rows
+  // pulled to confirm the name field really holds riding names. That last step
+  // matters -- one promising "Nova Scotia" candidate turned out to serve Baie Verte
+  // and Bonavista, i.e. Newfoundland, which only the sample values revealed.
+  // ---------------------------------------------------------------------------
+  esri({
+    name: 'Alberta Electoral Divisions',
+    endpoint:
+      'https://services.arcgis.com/U1hR2EB4RbcbOZPY/arcgis/rest/services/Current_Alberta_Electoral_Divisions/FeatureServer',
+    layerId: '0',
+    featureType: 'provincial_electoral_district',
+    jurisdiction: 'AB',
+    vintage: 'current',
+    licence: 'Unconfirmed — verify before broadcast use',
+    attribution: 'Elections Alberta',
+    nameFields: ['ED_NAME', 'EDName2017'],
+    sourceSrid: 3857,
+    verifiedCount: 87,
+    verifiedAt: VERIFIED_AT,
+    notes:
+      'Alberta’s 87 electoral divisions, from Elections Alberta’s own ArcGIS Online org. ' +
+      'Sample values confirmed: Calgary-Acadia, Calgary-Beddington. Licence not stated on ' +
+      'the service; confirm before air.',
+  }),
+  esri({
+    name: 'Saskatchewan Provincial Constituencies',
+    endpoint: 'https://gis.saskatchewan.ca/arcgis/rest/services/Administrative/MapServer',
+    layerId: '6',
+    featureType: 'provincial_electoral_district',
+    jurisdiction: 'SK',
+    vintage: 'current',
+    licence: 'Unconfirmed — verify before broadcast use',
+    attribution: 'Elections Saskatchewan',
+    nameFields: ['CON_NAME', 'CON_NUM'],
+    // NAD83(CSRS) / UTM 13N, added to normalize/crs.ts for this source.
+    sourceSrid: 2957,
+    verifiedCount: 61,
+    verifiedAt: VERIFIED_AT,
+    notes:
+      'Saskatchewan’s 61 constituencies on the province’s own GIS server, which states ' +
+      '"Elections Saskatchewan" as copyright. Listed on ArcGIS Hub by an individual account, ' +
+      'but this is the government endpoint the listing points at. Sample: Athabasca, Batoche.',
+  }),
+  esri({
+    name: 'Yukon Electoral Districts',
+    endpoint: 'https://mapservices.gov.yk.ca/arcgis/rest/services/GeoYukon/GY_AdministrativeBoundaries/MapServer',
+    layerId: '75',
+    featureType: 'provincial_electoral_district',
+    jurisdiction: 'YT',
+    vintage: 'current',
+    licence: 'Unconfirmed — verify before broadcast use',
+    attribution: 'Government of Yukon on behalf of Elections Yukon',
+    nameFields: ['ELECTORAL_DISTRICT_NAME', 'FR_ELECTORAL_DISTRICT_NAME'],
+    // NAD83 / Yukon Albers, added to normalize/crs.ts for this source.
+    sourceSrid: 3578,
+    verifiedCount: 21,
+    verifiedAt: VERIFIED_AT,
+    notes:
+      'Yukon’s 21 TERRITORIAL ridings, not federal — Yukon has a single federal seat. The ' +
+      'crawler classified this as federal on its title alone; the count is what gave it away. ' +
+      'Sample: Copperbelt North / Copperbelt Nord.',
+  }),
   esri({
     name: 'Ontario Municipal Boundaries — Lower and Single Tier',
     endpoint: LIO_OPEN03,

@@ -10,6 +10,15 @@ import { getGeometry } from './geometry-service';
 import { runSearch } from './search-service';
 import { runExport } from './export-service';
 import { DEFAULT_SVG_SRID } from '@shared/projections';
+import { asText } from '@shared/scalar';
+import { runDiscovery } from '../harvester/discovery/run-discovery';
+import { DISCOVERY_CATALOGS } from '@db/seed/sources';
+
+/** The CKAN portals discovery walks. Hub is always crawled and needs no root. */
+const CKAN_ROOTS = DISCOVERY_CATALOGS.filter((c) => c.kind === 'ckan').map((c) => ({
+  name: c.name,
+  endpoint: c.endpoint,
+}));
 
 /**
  * Headless harvest runner.
@@ -48,6 +57,10 @@ interface Args {
   srid: number;
   /** Catalog feature ids to export directly, bypassing search. Repeatable. */
   featureIds: number[];
+  /** Run the M7 discovery crawlers with these search terms. Repeatable. */
+  discover: string[];
+  /** Show what discovery has already found, best first. */
+  candidates: boolean;
 }
 
 function parseArgs(argv: string[]): Args {
@@ -64,6 +77,8 @@ function parseArgs(argv: string[]): Args {
     exportAll: false,
     srid: DEFAULT_SVG_SRID,
     featureIds: [],
+    discover: [],
+    candidates: false,
   };
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
@@ -98,6 +113,11 @@ function parseArgs(argv: string[]): Args {
     } else if (a === '--srid' && next) {
       out.srid = Number(next);
       i++;
+    } else if (a === '--discover' && next) {
+      out.discover.push(next);
+      i++;
+    } else if (a === '--candidates') {
+      out.candidates = true;
     } else if (a === '--list') {
       out.list = true;
     } else if (a === '--llm') {
@@ -282,6 +302,68 @@ async function main(): Promise<number> {
     console.log(`  credit: ${result.attribution || '(none)'}`);
     console.log(`  licences: ${result.licences.join(' | ') || '(none)'}`);
     for (const w of result.warnings) console.log(`  WARNING: ${w}`);
+    closeDb();
+    return 0;
+  }
+
+  if (args.candidates) {
+    const rows = db
+      .prepare(
+        `SELECT title, publisher, kind, feature_type, jurisdiction, live_count, confidence,
+                validated, decision, concerns, endpoint, layer_id, name_fields
+         FROM discovered_sources ORDER BY decision, confidence DESC, title`,
+      )
+      .all() as Record<string, unknown>[];
+
+    console.log(`[cli] ${rows.length} discovered candidate(s)\n`);
+    for (const r of rows) {
+      const concerns = JSON.parse((r['concerns'] as string) || '[]') as string[];
+      console.log(
+        `  ${Number(r['confidence']).toFixed(2)}  ${r['validated'] ? 'live' : 'DEAD'}  ` +
+          `${String(r['decision']).padEnd(8)} ${String(r['title']).slice(0, 62)}`,
+      );
+      console.log(
+        `        ${asText(r['feature_type'], '?')}/${asText(r['jurisdiction'], '?')}  ` +
+          `${asText(r['live_count'], '?')} features  fields=${asText(r['name_fields'], '[]')}` +
+          `  <- ${asText(r['publisher'], '?')}`,
+      );
+      console.log(`        ${asText(r['endpoint'], '?')}/${asText(r['layer_id'], '')}`);
+      for (const c of concerns) console.log(`        ! ${c}`);
+    }
+    closeDb();
+    return 0;
+  }
+
+  if (args.discover.length > 0) {
+    const http = new HttpClient({
+      log: (level, message) => {
+        if (level !== 'debug') console.log(`[http:${level}] ${message}`);
+      },
+    });
+
+    console.log(`[cli] crawling for: ${args.discover.join(', ')}\n`);
+    let lastReport = 0;
+    const result = await runDiscovery(
+      db,
+      http,
+      { queries: args.discover, maxPages: 2, maxValidations: args.limit ?? 40, ckanRoots: CKAN_ROOTS },
+      {
+        onProgress: (p) => {
+          const now = Date.now();
+          if (p.phase === 'searching' && now - lastReport < 500) return;
+          lastReport = now;
+          console.log(`    ${p.phase} [${p.catalog}] seen=${p.seen} kept=${p.kept} ${p.message}`);
+        },
+        log: (level, message) => console.log(`    [${level}] ${message}`),
+      },
+    );
+
+    console.log(
+      `\n[cli] seen ${result.seen}, kept ${result.kept}, already known ${result.duplicates}, ` +
+        `validated ${result.validated}, reachable ${result.reachable}, stored ${result.written}`,
+    );
+    for (const w of result.warnings) console.log(`      WARNING: ${w}`);
+    console.log(`\n[cli] review them with --candidates`);
     closeDb();
     return 0;
   }

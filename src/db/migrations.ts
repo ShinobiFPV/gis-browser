@@ -187,6 +187,52 @@ const M6_ARCHIVE_BYTES = `
 ALTER TABLE sources ADD COLUMN archive_bytes INTEGER;
 `;
 
+/**
+ * Candidates found by the M7 crawlers, held apart from `sources` until a person accepts
+ * one.
+ *
+ * A separate table rather than a status column on `sources`, because these are not sources
+ * yet and must not be reachable by anything that harvests or searches. ArcGIS Hub answers
+ * "provincial electoral districts" with 657,212 matches; the good ones and the municipal
+ * extracts wearing the same title arrive in the same page, and the difference decides
+ * whether a real riding or a five-polygon fragment goes to air.
+ *
+ * Keyed on the endpoint so re-running a crawl updates a candidate instead of stacking
+ * duplicates, and so the decision already recorded against it survives.
+ */
+const M7_DISCOVERED = `
+CREATE TABLE discovered_sources (
+  id INTEGER PRIMARY KEY,
+  catalog TEXT NOT NULL,
+  catalog_id TEXT NOT NULL,
+  title TEXT NOT NULL,
+  endpoint TEXT NOT NULL,
+  layer_id TEXT NOT NULL DEFAULT '',
+  kind TEXT NOT NULL,
+  publisher TEXT,
+  feature_type TEXT,
+  jurisdiction TEXT,
+  name_fields TEXT,
+  source_srid INTEGER,
+  licence TEXT,
+  description TEXT,
+  record_count INTEGER,
+  live_count INTEGER,
+  minx REAL, miny REAL, maxx REAL, maxy REAL,
+  confidence REAL NOT NULL DEFAULT 0,
+  concerns TEXT,
+  validated INTEGER NOT NULL DEFAULT 0,
+  validation_error TEXT,
+  -- 'new' until someone rules on it; 'accepted' once promoted into sources.
+  decision TEXT NOT NULL DEFAULT 'new' CHECK (decision IN ('new','accepted','rejected')),
+  discovered_at TEXT NOT NULL,
+  decided_at TEXT,
+  UNIQUE(endpoint, layer_id)
+);
+
+CREATE INDEX idx_discovered_decision ON discovered_sources(decision, confidence DESC);
+`;
+
 export const MIGRATIONS: Migration[] = [
   {
     version: 1,
@@ -217,6 +263,11 @@ export const MIGRATIONS: Migration[] = [
     version: 6,
     name: 'record Tier B archive download size',
     up: (db) => db.exec(M6_ARCHIVE_BYTES),
+  },
+  {
+    version: 7,
+    name: 'staging table for crawler-discovered sources',
+    up: (db) => db.exec(M7_DISCOVERED),
   },
 ];
 

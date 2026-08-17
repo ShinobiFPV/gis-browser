@@ -838,3 +838,68 @@ b.dim {
   padding: 4px 6px;
   margin-bottom: 6px;
 }
+
+/* --- M7 discovery review --- */
+
+.discovery {
+  border-top: 1px solid var(--border);
+}
+
+.discovery-run {
+  display: flex;
+  gap: 6px;
+  padding: 6px 8px;
+}
+
+.discovery-run input {
+  flex: 1;
+  min-width: 0;
+}
+
+.candidate {
+  padding: 5px 8px;
+  border-top: 1px solid #161c24;
+}
+
+.candidate-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+}
+
+.candidate-title {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text);
+}
+
+.conf {
+  font-family: ui-monospace, monospace;
+  font-size: 10px;
+  padding: 1px 4px;
+  border-radius: 2px;
+}
+
+.conf.good { color: var(--ok); background: #0d2010; }
+.conf.mid  { color: var(--warn); background: #221a05; }
+.conf.poor { color: var(--err); background: #2a1113; }
+
+.candidate-meta {
+  font-size: 10px;
+  color: var(--text-faint);
+  margin-top: 2px;
+}
+
+/* Never collapsed: the reasons to distrust a candidate are the whole point of the list. */
+.candidate-concern {
+  font-size: 10px;
+  line-height: 1.35;
+  color: var(--warn);
+  margin-top: 3px;
+  padding-left: 6px;
+  border-left: 2px solid var(--warn);
+}

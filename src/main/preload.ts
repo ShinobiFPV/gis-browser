@@ -2,6 +2,7 @@ import { contextBridge, ipcRenderer } from 'electron';
 import {
   CH,
   type ExportProgress,
+  type DiscoveryRunRequest,
   type ExportRequest,
   type GisBridge,
   type LogLine,
@@ -23,6 +24,10 @@ const bridge: GisBridge = {
   sourcesSetStatus: (id: number, status: SourceRow['status']) => ipcRenderer.invoke(CH.sourcesSetStatus, id, status),
   downloadsList: () => ipcRenderer.invoke(CH.downloadsList),
   downloadsRemove: (sourceId: number) => ipcRenderer.invoke(CH.downloadsRemove, sourceId),
+  discoveryRun: (req: DiscoveryRunRequest) => ipcRenderer.invoke(CH.discoveryRun, req),
+  discoveryList: () => ipcRenderer.invoke(CH.discoveryList),
+  discoveryDecide: (id: number, decision: 'accepted' | 'rejected') =>
+    ipcRenderer.invoke(CH.discoveryDecide, id, decision),
   harvestStart: (sourceIds: number[]) => ipcRenderer.invoke(CH.harvestStart, sourceIds),
   harvestCancel: () => ipcRenderer.invoke(CH.harvestCancel),
   searchRun: (req: SearchRequest) => ipcRenderer.invoke(CH.searchRun, req),

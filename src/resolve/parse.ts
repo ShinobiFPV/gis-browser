@@ -28,9 +28,24 @@ export interface ParsedQuery {
  * Phrases that identify a feature type. Longest first, because "provincial electoral
  * district" must win over "electoral district" and "federal riding" over "riding".
  */
-const TYPE_PHRASES: [string, FeatureType][] = [
+/**
+ * Exported so discovery classifies a dataset title with the same vocabulary the search
+ * parser uses. Two lists would drift, and a dataset filed under a type nobody searches
+ * for is invisible however well it was crawled.
+ */
+export const TYPE_PHRASES: [string, FeatureType][] = [
   ['provincial electoral district', 'provincial_electoral_district'],
   ['provincial electoral districts', 'provincial_electoral_district'],
+  // What the provinces actually call their own ridings. Saskatchewan, Alberta and
+  // Manitoba say "constituency"; Manitoba and the Northwest Territories say "electoral
+  // division"; Yukon says "electoral district" and means the territorial one.
+  ['provincial constituency', 'provincial_electoral_district'],
+  ['provincial constituencies', 'provincial_electoral_district'],
+  ['electoral division', 'provincial_electoral_district'],
+  ['electoral divisions', 'provincial_electoral_district'],
+  ['legislative assembly', 'provincial_electoral_district'],
+  ['constituency', 'provincial_electoral_district'],
+  ['constituencies', 'provincial_electoral_district'],
   ['federal electoral district', 'federal_electoral_district'],
   ['federal electoral districts', 'federal_electoral_district'],
   ['census metropolitan area', 'census_metropolitan_area'],

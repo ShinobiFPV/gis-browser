@@ -34,6 +34,12 @@ const DEFS: Record<number, string> = {
   3005:
     '+proj=aea +lat_0=45 +lon_0=-126 +lat_1=50 +lat_2=58.5 +x_0=1000000 +y_0=0 ' +
     '+datum=NAD83 +units=m +no_defs',
+  // NAD83(CSRS) / UTM zone 13N. Saskatchewan's provincial constituencies.
+  2957: '+proj=utm +zone=13 +ellps=GRS80 +towgs84=0,0,0,0,0,0,0 +units=m +no_defs',
+  // NAD83 / Yukon Albers. Yukon's territorial electoral districts.
+  3578:
+    '+proj=aea +lat_0=59 +lon_0=-132.5 +lat_1=61.66666666666666 +lat_2=68 +x_0=500000 +y_0=500000 ' +
+    '+datum=NAD83 +units=m +no_defs',
   // NAD83 / Ontario MNR Lambert.
   3161:
     '+proj=lcc +lat_0=0 +lon_0=-85 +lat_1=44.5 +lat_2=53.5 +x_0=930000 +y_0=6430000 ' +

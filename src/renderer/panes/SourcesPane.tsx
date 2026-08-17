@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import type { HarvestProgress, SourceRow } from '@shared/types';
-import type { BulkDownload } from '@shared/ipc';
+import type { BulkDownload, DiscoveredRow, DiscoveryRunResult } from '@shared/ipc';
 import { FEATURE_TYPE_LABELS, groupOf } from '@shared/taxonomy';
 
 interface Props {
@@ -23,6 +23,45 @@ export function SourcesPane({ sources, progress, onRefresh, busy }: Props): Reac
   const [checked, setChecked] = useState<Set<number>>(new Set());
   const [downloads, setDownloads] = useState<BulkDownload[]>([]);
   const [showDownloads, setShowDownloads] = useState(false);
+
+  const [showDiscovery, setShowDiscovery] = useState(false);
+  const [candidates, setCandidates] = useState<DiscoveredRow[]>([]);
+  const [query, setQuery] = useState('');
+  const [crawling, setCrawling] = useState(false);
+  const [crawlResult, setCrawlResult] = useState<DiscoveryRunResult | null>(null);
+  const [crawlError, setCrawlError] = useState<string | null>(null);
+
+  const refreshCandidates = useCallback(async () => {
+    setCandidates(await window.gis.discoveryList());
+  }, []);
+
+  useEffect(() => {
+    void refreshCandidates();
+  }, [refreshCandidates]);
+
+  const pendingCandidates = candidates.filter((c) => c.decision === 'new').length;
+
+  async function crawl(): Promise<void> {
+    setCrawling(true);
+    setCrawlError(null);
+    try {
+      setCrawlResult(await window.gis.discoveryRun({ queries: [query] }));
+      await refreshCandidates();
+    } catch (err) {
+      setCrawlError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setCrawling(false);
+    }
+  }
+
+  async function decide(id: number, decision: 'accepted' | 'rejected'): Promise<void> {
+    const res = await window.gis.discoveryDecide(id, decision);
+    // Accepting can legitimately fail -- an unclassifiable or nameless candidate cannot
+    // become a source -- and the reason belongs on screen rather than in a console.
+    setCrawlError(res.ok ? null : (res.error ?? 'Could not accept that candidate.'));
+    await refreshCandidates();
+    if (res.ok && decision === 'accepted') await onRefresh();
+  }
 
   const refreshDownloads = useCallback(async () => {
     setDownloads(await window.gis.downloadsList());
@@ -155,6 +194,86 @@ export function SourcesPane({ sources, progress, onRefresh, busy }: Props): Reac
           </div>
         ))}
         {shown.length === 0 && <div className="empty">No sources match that filter.</div>}
+      </div>
+
+      {/* Discovery. Collapsed until asked for: crawling is a deliberate act, not a
+          background one, and the results need reading rather than glancing at. */}
+      <div className="downloads">
+        <button className="downloads-toggle" onClick={() => setShowDiscovery((v) => !v)}>
+          {showDiscovery ? '▾' : '▸'} Discover new sources
+          {pendingCandidates > 0 && ` · ${pendingCandidates} awaiting review`}
+        </button>
+
+        {showDiscovery && (
+          <div className="discovery">
+            <div className="discovery-run">
+              <input
+                type="text"
+                placeholder="what to look for, e.g. Manitoba electoral divisions"
+                value={query}
+                onChange={(e) => setQuery(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') void crawl();
+                }}
+              />
+              <button disabled={crawling || !query.trim()} onClick={() => void crawl()}>
+                {crawling ? 'Crawling…' : 'Crawl'}
+              </button>
+            </div>
+
+            <div className="download-note">
+              Searches ArcGIS Hub and the federal, BC and Québec CKAN portals, keeps what looks
+              Canadian, then checks each endpoint is live. Nothing is added to the catalog until
+              you accept it.
+            </div>
+
+            {crawlResult && (
+              <div className="download-note">
+                {crawlResult.seen} results seen · {crawlResult.kept} candidates ·{' '}
+                {crawlResult.duplicates} already known · {crawlResult.reachable} of{' '}
+                {crawlResult.validated} endpoints live
+              </div>
+            )}
+            {crawlError && <div className="warn-line error">{crawlError}</div>}
+
+            {candidates
+              .filter((c) => c.decision === 'new')
+              .slice(0, 25)
+              .map((c) => (
+                <div key={c.id} className="candidate">
+                  <div className="candidate-head">
+                    <span className={`conf ${c.confidence >= 0.8 ? 'good' : c.confidence >= 0.5 ? 'mid' : 'poor'}`}>
+                      {c.confidence.toFixed(2)}
+                    </span>
+                    <span className="candidate-title" title={`${c.endpoint}/${c.layerId}`}>
+                      {c.title}
+                    </span>
+                    <button className="link-button" onClick={() => void decide(c.id, 'accepted')}>
+                      accept
+                    </button>
+                    <button className="link-button" onClick={() => void decide(c.id, 'rejected')}>
+                      reject
+                    </button>
+                  </div>
+                  <div className="candidate-meta">
+                    {c.featureType ?? 'unknown type'} · {c.jurisdiction ?? 'unknown where'} ·{' '}
+                    {c.liveCount ?? '?'} features · {c.nameFields.join(', ') || 'no name field'} ·{' '}
+                    {c.publisher ?? 'unknown publisher'}
+                  </div>
+                  {/* Concerns are the point of this list, so they are never collapsed. */}
+                  {c.concerns.map((concern, i) => (
+                    <div key={i} className="candidate-concern">
+                      {concern}
+                    </div>
+                  ))}
+                </div>
+              ))}
+
+            {candidates.length > 0 && candidates.every((c) => c.decision !== 'new') && (
+              <div className="download-note">Every candidate has been ruled on.</div>
+            )}
+          </div>
+        )}
       </div>
 
       {/* Download manager. Collapsed by default: it only matters once something is cached. */}
