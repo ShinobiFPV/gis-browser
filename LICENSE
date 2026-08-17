@@ -19,16 +19,3 @@ AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
 LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
-
----
-
-This licence covers the GIS Browser application source code only.
-
-It does NOT cover the boundary data the application retrieves. That data is
-published by Statistics Canada, Elections Canada, Natural Resources Canada,
-provincial and territorial governments, and other third parties, each under its
-own terms. Those terms are recorded in the source registry, shown in the
-application, and written into the `_provenance` block of every exported file.
-Several sources publish under the Open Government Licence – Canada; several
-declare no usable licence at all and are flagged as unconfirmed. Check the terms
-of the specific source before publishing or broadcasting anything derived from it.

@@ -273,14 +273,16 @@ Stated plainly, because the point of this app is not guessing:
 The application is **MIT licensed** — see [LICENSE](LICENSE). Use it, fork it, ship it.
 
 **The boundary data is a separate matter and is not the application's to license.** Every
-source carries its own terms, set by the government body that published it. Those terms
-are recorded in the source registry, shown in the app, and written into the `_provenance`
-block of every file you export — alongside the source URL, vintage and retrieval date, so
-a boundary can always be traced back to where it came from.
+source carries its own terms, set by the body that published it. Those terms are recorded
+in the source registry, shown in the app, and written into the `_provenance` block of
+every file you export — alongside the source URL, vintage and retrieval date, so a
+boundary can always be traced back to where it came from.
 
 Several sources publish under the Open Government Licence – Canada. Several declare
-nothing usable at all, and those are flagged as *unconfirmed* in the UI and in the
-exported file rather than quietly assumed to be open. Check the terms of the specific
+nothing usable at all, and those are flagged as *unconfirmed* rather than quietly assumed
+to be open. An unconfirmed licence is not permission — check the terms of the specific
 source before publishing or broadcasting anything derived from it.
+
+See [NOTICE.md](NOTICE.md) for the full picture on data licensing.
 
 © 2026 ShinTech Electronics
