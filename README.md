@@ -3,12 +3,16 @@
 [![Build](https://github.com/ShinobiFPV/gis-browser/actions/workflows/build.yml/badge.svg)](https://github.com/ShinobiFPV/gis-browser/actions/workflows/build.yml)
 [![Licence: MIT](https://img.shields.io/badge/licence-MIT-blue.svg)](LICENSE)
 
-Ask for a Canadian boundary in plain language. Get back a clean GeoJSON or SVG outline
-from official open data, with its source, licence and vintage attached.
+Ask for a boundary in plain language. Get back a clean GeoJSON or SVG outline from
+official open data, with its source, licence and vintage attached.
 
 Built for broadcast graphics — the case it is shaped around is an artist on deadline who
-needs the outline of a federal riding, a First Nation reserve or a census subdivision, and
-needs it to be *right*, because a wrong boundary on air costs far more than a click.
+needs the outline of a federal riding, a First Nation reserve, a census subdivision, a US
+state or a country, and needs it to be *right*, because a wrong boundary on air costs far
+more than a click.
+
+Canada is covered in depth. Every country on earth and all 56 US states and equivalents
+are covered as of v0.2.0; other countries get the same treatment one at a time.
 
 ![Search, preview and export](docs/screenshots/search-and-export.png)
 
@@ -24,19 +28,50 @@ same place. Finding "Parry Island First Nation" means knowing it is filed as
 *Parry Island 16* in one source and *Wasauksing* in conversation.
 
 GIS Browser indexes all of it by name, then fetches only the geometry you actually ask
-for.
+for. Outside Canada the same problem repeats in a different shape, one publisher at a
+time — which is why coverage grows country by country rather than by finding a single
+global source and trusting it.
 
-Coverage now extends past Canada: every country on earth, and the United States broken
-down to states. Jurisdiction codes are ISO 3166 — `US` is a country, `US-TX` a state,
-`CA-ON` a province. Subdivisions carry their country prefix because five Canadian
-abbreviations are also country codes for somewhere else entirely: `NL`, `NU`, `PE`, `SK`
-and `YT` are the Netherlands, Niue, Peru, Slovakia and Mayotte. Sharing one namespace
-would not have failed — it would have quietly merged Newfoundland into the Netherlands.
+### Jurisdiction codes
+
+Codes are ISO 3166. Countries are two letters (`US`, `FR`); anything inside a country
+carries its country (`US-TX`, `CA-ON`).
+
+The prefix is not decoration. Five Canadian abbreviations are also ISO country codes for
+somewhere else entirely:
+
+| Code | Was | Is also |
+|---|---|---|
+| `NL` | Newfoundland and Labrador | Netherlands |
+| `NU` | Nunavut | Niue |
+| `PE` | Prince Edward Island | Peru |
+| `SK` | Saskatchewan | Slovakia |
+| `YT` | Yukon | Mayotte |
+
+Sharing one namespace would not have thrown an error — it would have quietly merged them.
+A filter for the Netherlands returning Newfoundland's ridings is exactly the failure this
+app exists to prevent: no error, plausible output, wrong country.
+
+### Boundaries that cross the antimeridian
+
+Alaska runs from **−179.147° to 179.778°**. Take the minimum and maximum longitude and you
+get a bounding box spanning −179 to 179 — a box containing every point on earth. The same
+is true of Russia, Fiji, New Zealand, Kiribati and the United States as a whole.
+
+Longitude is therefore measured on a circle, not a line: a set of longitudes has a largest
+gap, and the tightest box is the one spanning everything *except* that gap. Alaska comes
+out 58° wide instead of 359°, Fiji 7.2°, Russia 171.4°.
+
+Such a box is stored `minx > maxx`, the standard convention. SQLite's R-tree rejects that
+outright — the first Alaska harvest died on `rtree constraint failed:
+features_rtree.(minx<=maxx)` — so every feature gets two R-tree slots and a crossing
+extent is indexed as its two lobes. A query over Attu finds Alaska; a query over London
+does not.
 
 ## Core architectural decision: index everything, fetch geometry on demand
 
 This drives the whole design. The local database is a **searchable catalog with a geometry
-cache**, not an offline mirror of Canada.
+cache**, not an offline mirror of the world.
 
 **Tier A** — queryable services (ESRI FeatureServer, OGC WFS). Harvest names, attributes
 and a bounding box. No geometry. When you export a boundary, its geometry is fetched from
@@ -48,8 +83,18 @@ the whole archive. These are explicitly user-triggered, the size is shown before
 download starts, and geometry is stored at index time — so those boundaries export with
 no network at all.
 
-A full harvest of the current registry indexes **90,495 features** and **203,482 search
-aliases** from 44 sources, in a SQLite file that stays in the low hundreds of megabytes.
+A full harvest of the Canadian registry indexes **90,495 features** and **203,482 search
+aliases** across 45 sources. Adding every country and all 56 US states puts another 314
+features on top of that.
+
+Size is dominated by cached geometry, not by the index. On the development machine the
+file is **2.0 GB**, of which the `geometries` table is 2.12 GB and everything else —
+features, aliases, the FTS index, the R-tree, every index — comes to about 40 MB.
+
+That split is the architecture working. 67,198 of those cached geometries arrived with
+Tier B archives, which have no per-feature interface and must be taken whole. Just **22**
+came from Tier A, fetched on demand because somebody actually exported them. Harvest only
+Tier A and the catalog stays in the tens of megabytes until you start using it.
 
 ---
 
@@ -97,7 +142,7 @@ parallel. Shared borders stay shared.
 
 Type a request in plain language. It is understood **without any network call**:
 
-1. **Parse** — a keyword parser pulls out the place name, boundary type, province and
+1. **Parse** — a keyword parser pulls out the place name, boundary type, jurisdiction and
    vintage. `"Give me the outline shape for Parry Island First Nation"` becomes
    `parry island` + type `indian_reserve`.
 2. **Match** — three passes over an SQLite FTS5 index of every name and alias: exact
@@ -108,6 +153,11 @@ Type a request in plain language. It is understood **without any network call**:
 
 **The top five are always shown, with map thumbnails. Nothing is ever auto-exported**,
 however confident the match.
+
+The jurisdiction filter is built from what the catalog actually holds, grouped by country,
+so it can only offer codes that can return something. The model is offered that same list
+rather than a fixed enum — there are roughly 250 countries plus every subdivision
+harvested under them, and most are not indexed on any given machine.
 
 Adding an API key layers a model over both ends: it parses the request and re-ranks the
 candidates. Both are optional and both degrade independently — if the key is missing, the
@@ -167,9 +217,12 @@ From [Releases](../../releases):
 
 | Platform | File |
 |---|---|
-| Windows x64 | `GIS Browser-<version>-setup.exe` |
-| macOS Apple silicon | `GIS Browser-<version>-arm64.dmg` |
-| macOS Intel | `GIS Browser-<version>-x64.dmg` |
+| Windows x64 | `GIS.Browser-0.2.0-setup.exe` |
+| macOS Apple silicon | `GIS.Browser-0.2.0-arm64.dmg` |
+| macOS Intel | `GIS.Browser-0.2.0-x64.dmg` |
+
+(GitHub replaces the space in the product name with a dot when it stores an asset, so the
+file you download is `GIS.Browser-…`, not `GIS Browser-…`.)
 
 **Both builds are unsigned**, and the two platforms handle that differently.
 
@@ -190,6 +243,24 @@ Signing and notarizing both require certificates this project does not have.
 On first launch the wizard offers a starter harvest. The essential set (~22 sources —
 ridings, provinces, reserves, municipalities, census subdivisions) takes a few minutes.
 Bulk downloads are never started for you.
+
+The two international layers are registered but not harvested by default, for the same
+reason. US states is Tier A and takes seconds; the countries layer is a 4.9 MB Tier B
+archive. Both are in the Sources pane, or from the CLI:
+
+```bash
+electron out/main/cli.js --type country              # every country — 258 features, ~1s
+electron out/main/cli.js --type province_territory   # 56 US states, plus Canada's 13
+```
+
+The second also re-harvests the Canadian provinces layer, which takes about two minutes
+against Statistics Canada; the US states themselves take under two seconds.
+
+**Upgrading from 0.1.x rewrites your jurisdiction codes** (`ON` → `CA-ON`) the first time
+0.2.0 opens the catalog. It is one-way: a 0.2.0 catalog opened by an older build would
+read the prefixed codes as unknown and seed bare ones over them. Verified on a 2.0 GB
+catalog — 90,495 features preserved exactly, in under three seconds — but if yours took
+hours to harvest, copy the `.sqlite` file first.
 
 ### Updates
 
@@ -244,6 +315,7 @@ verified:
 electron out/main/cli.js --list                              # the source registry
 electron out/main/cli.js --id 12                             # harvest one source
 electron out/main/cli.js --find "Parry Island First Nation"  # search + fetch geometry
+electron out/main/cli.js --find "Alaska"                     # states and countries too
 electron out/main/cli.js --find "Nunavut" --export svg --retention 5
 electron out/main/cli.js --feature 3623 --feature 3624 --export geojson
 electron out/main/cli.js --discover "Manitoba electoral divisions"
@@ -296,7 +368,7 @@ span the whole jurisdiction"*, *"Yukon has 1 federal seat but this holds 21 feat
 
 Electron 43 · React 19 · TypeScript 5.9 (strict) · Vite 7 via electron-vite ·
 better-sqlite3 (FTS5 + R-tree) · proj4 · mapshaper · maplibre-gl · shapefile + yauzl ·
-`@anthropic-ai/sdk`
+`@anthropic-ai/sdk` · zod
 
 **No GDAL, ogr2ogr, SpatiaLite, GEOS or any system binary.** Pure JS and WASM, so the app
 ships as one installer. The app icon is even generated by a pure-Node rasteriser
@@ -304,16 +376,16 @@ ships as one installer. The app icon is even generated by a pure-Node rasteriser
 
 ```
 src/
-  main/        IPC, window, Anthropic client, safeStorage key handling, export, discovery
+  main/        IPC, window, LLM clients, safeStorage key handling, export, updates
   harvester/   utilityProcess: HTTP, catalog clients, bulk ingest, normalisation
   resolve/     parsing, fuzzy matching, ranking — the search layer, heavily tested
   export/      GeoJSON, SVG, simplification, provenance, winding
   db/          schema, migrations, seeded source registry
   renderer/    React UI, four panes
-  shared/      taxonomy, IPC contract, projections — the seams between processes
+  shared/      taxonomy, jurisdictions, IPC contract, projections — the process seams
 ```
 
-~12,900 lines of source, ~4,100 of tests, 7 append-only schema migrations.
+~15,800 lines of source, ~5,500 of tests, 8 append-only schema migrations, 484 tests.
 
 ### Security and key handling
 
@@ -345,7 +417,24 @@ Stated plainly, because the point of this app is not guessing:
   is not.
 - **Seven jurisdictions have no provincial ridings yet** — MB, QC, NB, NS, PE, NT, NU.
   The crawlers can find them; they are not seeded because they have not been verified to
-  the same standard as the rest.
+  the same standard as the rest. The six that do: AB (87), BC (93), NL (40), ON (124),
+  SK (61), YT (21).
+- **Outside Canada, coverage is countries and US states — nothing below that.** There are
+  no French departments, German states or UK constituencies. Each is a separate publisher
+  needing its own verified endpoint, which is the work, and doing it badly by scraping one
+  global aggregator is exactly what this app is built not to do.
+- **13 of the 258 countries have no ISO code**, because Natural Earth does not assign one:
+  Somaliland, N. Cyprus, Spratly Is., Bir Tawil, Akrotiri, Dhekelia and similar contested
+  or unassigned entities. They are searchable by name but cannot be filtered by
+  jurisdiction. Inventing codes for them would be taking a position, and a wrong code is
+  worse than none.
+- **Discovery is still Canada-only** and says so in the source. Its crawlers search
+  Canadian catalogs and its scoring compares candidate extents against Canadian
+  jurisdictions. It will not help you find a German state boundary.
+- **The Natural Earth countries layer is generalised**, at 1:10m. It is right for a
+  locator or a context outline behind a story, and wrong if you need a precise
+  international border — for which the authoritative national source is the answer, added
+  the same way US states were.
 - **Seven Elections Canada sources on `maps-cartes.services.geo.ca` return HTTP 403**
   host-wide and cannot be harvested. The Tier B shapefile fallback covers the 2023 ridings
   completely, which is why that redundancy was seeded.
