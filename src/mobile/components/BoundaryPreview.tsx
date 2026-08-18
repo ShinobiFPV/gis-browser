@@ -5,6 +5,7 @@ interface Props {
   geometry: Geometry | null;
   /** Drawn as a dashed rectangle when there is no geometry yet, so the list still locates. */
   bbox: [number, number, number, number] | null;
+  /** The viewBox, not a pixel size -- the SVG is scaled to its container by the stylesheet. */
   width?: number;
   height?: number;
 }
@@ -22,6 +23,10 @@ interface Props {
  * anyone should export -- the SVG exporter goes through proj4 into a real projected CRS for
  * exactly that reason -- but for a thumbnail it puts the shape at roughly the right aspect
  * ratio, which unprojected lon/lat does not: Nunavut drawn raw is twice as wide as it is.
+ *
+ * Nothing here is measured in pixels. The viewBox is a coordinate space and the container
+ * decides how big it is drawn, so the outline fits whatever room a phone has -- and because
+ * the fit leaves the shape inside the box with padding to spare, "fits" never means "clipped".
  */
 export function BoundaryPreview({ geometry, bbox, width = 320, height = 220 }: Props): React.JSX.Element {
   const path = useMemo(() => (geometry ? buildPath(geometry, width, height) : null), [geometry, width, height]);
@@ -34,7 +39,6 @@ export function BoundaryPreview({ geometry, bbox, width = 320, height = 220 }: P
       role="img"
       aria-label={geometry ? 'Boundary outline' : 'No boundary loaded'}
     >
-      <rect x={0} y={0} width={width} height={height} className="preview-frame" />
       {path ? (
         <path d={path} className="preview-shape" />
       ) : (

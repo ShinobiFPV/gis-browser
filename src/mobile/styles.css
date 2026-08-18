@@ -307,11 +307,24 @@ button {
   gap: 18px;
 }
 
+.sheet-body > * {
+  /* A column flexbox squeezes its children to fit before it lets the body scroll. The
+     preview clips its overflow, so without this the outline is cropped on any screen too
+     short to hold the whole sheet at once -- which is every phone. */
+  flex-shrink: 0;
+}
+
 /* ---------- preview ---------- */
 
 .preview-shell {
   position: relative;
-  background: var(--bg-pane);
+  /* The box follows the preview's viewBox, so in portrait it is as wide as the sheet and
+     the outline fills it. The cap is for landscape, where a full-width preview would be
+     taller than the phone is and the top and bottom of the shape would sit off screen. */
+  aspect-ratio: 320 / 220;
+  max-height: 45vh;
+  max-height: 45svh;
+  background: #070a0e;
   border: 1px solid var(--border);
   border-radius: 12px;
   overflow: hidden;
@@ -319,12 +332,11 @@ button {
 
 .preview {
   display: block;
+  /* Fills the shell at whatever size the shell ends up. When the height cap makes the box
+     wider than the viewBox, preserveAspectRatio letterboxes -- against the same colour as
+     the shell, so it still reads as one panel rather than a frame inside a frame. */
   width: 100%;
-  height: auto;
-}
-
-.preview-frame {
-  fill: #070a0e;
+  height: 100%;
 }
 
 .preview-shape {
