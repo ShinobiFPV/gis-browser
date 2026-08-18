@@ -1,0 +1,40 @@
+{
+  "packageId": "ca.shintech.gisbrowser",
+  "host": "gis-browser.pages.dev",
+  "name": "GIS Browser Mobile",
+  "launcherName": "GIS Browser",
+  "display": "standalone",
+  "orientation": "portrait",
+  "themeColor": "#0D1117",
+  "themeColorDark": "#0D1117",
+  "navigationColor": "#0D1117",
+  "navigationColorDark": "#0D1117",
+  "navigationDividerColor": "#0D1117",
+  "navigationDividerColorDark": "#0D1117",
+  "backgroundColor": "#0D1117",
+  "enableNotifications": false,
+  "startUrl": "/",
+  "iconUrl": "https://gis-browser.pages.dev/icon-512.png",
+  "maskableIconUrl": "https://gis-browser.pages.dev/icon-maskable-512.png",
+  "splashScreenFadeOutDuration": 300,
+  "signingKey": {
+    "path": "./android.keystore",
+    "alias": "upload"
+  },
+  "appVersionName": "0.2.0",
+  "appVersionCode": 1,
+  "shortcuts": [],
+  "generatorApp": "bubblewrap-cli",
+  "webManifestUrl": "https://gis-browser.pages.dev/manifest.webmanifest",
+  "fallbackType": "customtabs",
+  "features": {},
+  "alphaDependencies": {
+    "enabled": false
+  },
+  "enableSiteSettingsShortcut": true,
+  "isChromeOSOnly": false,
+  "isMetaQuest": false,
+  "fingerprints": [],
+  "additionalTrustedOrigins": [],
+  "retainedBundles": []
+}

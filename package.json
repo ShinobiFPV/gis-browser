@@ -29,7 +29,11 @@
     "mobile:data": "npm run mobile:index && npm run mobile:world && npm run icon",
     "mobile:dev": "vite --config vite.mobile.config.ts",
     "mobile:build": "tsc --noEmit -p tsconfig.mobile.json && vite build --config vite.mobile.config.ts",
-    "mobile:preview": "vite preview --config vite.mobile.config.ts"
+    "mobile:preview": "vite preview --config vite.mobile.config.ts",
+    "mobile:deploy": "npm run mobile:build && node scripts/build-assetlinks.mjs --check && npx wrangler@4 pages deploy",
+    "twa:update": "node scripts/twa-update.mjs",
+    "twa:build": "cd android && bubblewrap build",
+    "twa:assetlinks": "node scripts/build-assetlinks.mjs"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "0.117.1",

@@ -1,0 +1,14 @@
+# Cloudflare Pages, for GIS Browser Mobile.
+#
+# The PWA is hosted here rather than on GitHub Pages for one specific reason: a Trusted Web
+# Activity only drops the URL bar if Chrome finds /.well-known/assetlinks.json at the
+# ORIGIN ROOT. A GitHub project page lives at username.github.io/gis-browser/, and its
+# origin root belongs to the user site, not to this repo -- so the Android app could never
+# be verified from there.
+#
+# Deploys come from a developer machine, not from CI, because the site is not buildable in
+# CI: the search index is generated from a 2 GB harvested catalog that exists only where a
+# harvest has been run. See `npm run mobile:deploy`.
+name = "gis-browser"
+compatibility_date = "2026-08-17"
+pages_build_output_dir = "dist-mobile"
